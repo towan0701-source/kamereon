@@ -1,0 +1,425 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>めっちゃカメレオン P2P オンラインゲーム</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: sans-serif;
+      background: #222;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    #ui {
+      margin-top: 10px;
+    }
+    canvas {
+      background: #111;
+      border: 2px solid #555;
+      margin-top: 10px;
+    }
+    button, textarea {
+      margin: 4px;
+    }
+  </style>
+</head>
+<body>
+  <h1>めっちゃカメレオン P2P オンラインゲーム</h1>
+  <p>
+    色を変えながらフィールドを移動して、ステルス・スピード・ジャンプを使い分けて相手より先にゴールへ！<br>
+    2人対戦用。WebRTCのDataChannelで同期します（シグナリングは手動）。
+  </p>
+
+  <div id="ui">
+    <div>
+      <button id="createOfferBtn">オファー作成（ホスト）</button>
+      <button id="setOfferBtn">オファー設定（ゲスト）</button>
+      <button id="setAnswerBtn">アンサー設定（ホスト）</button>
+    </div>
+    <textarea id="signalBox" cols="60" rows="6"
+      placeholder="ここにオファー/アンサーJSONをコピペして相手と交換してね"></textarea>
+    <div>
+      <span>接続状態: </span><span id="connStatus">未接続</span>
+    </div>
+  </div>
+
+  <canvas id="game" width="800" height="450"></canvas>
+
+  <script>
+    // ====== P2P (WebRTC DataChannel) ======
+    let pc;
+    let dataChannel;
+    const connStatus = document.getElementById("connStatus");
+    const signalBox = document.getElementById("signalBox");
+
+    const config = {
+      iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+    };
+
+    function logStatus(msg) {
+      connStatus.textContent = msg;
+      console.log("[P2P]", msg);
+    }
+
+    async function createPeerConnection(isOfferer) {
+      pc = new RTCPeerConnection(config);
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) return;
+        signalBox.value = JSON.stringify(pc.localDescription);
+      };
+
+      pc.onconnectionstatechange = () => {
+        logStatus(pc.connectionState);
+      };
+
+      if (isOfferer) {
+        dataChannel = pc.createDataChannel("chameleon");
+        setupDataChannel();
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+      } else {
+        pc.ondatachannel = (e) => {
+          dataChannel = e.channel;
+          setupDataChannel();
+        };
+      }
+    }
+
+    function setupDataChannel() {
+      dataChannel.onopen = () => logStatus("DataChannel オープン");
+      dataChannel.onclose = () => logStatus("DataChannel クローズ");
+      dataChannel.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        handleRemoteMessage(msg);
+      };
+    }
+
+    async function setRemoteDescriptionFromBox(type) {
+      const sdp = JSON.parse(signalBox.value);
+      await pc.setRemoteDescription(sdp);
+      if (type === "offer") {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        signalBox.value = JSON.stringify(pc.localDescription);
+      }
+    }
+
+    document.getElementById("createOfferBtn").onclick = async () => {
+      await createPeerConnection(true);
+      logStatus("オファー作成中… ICE完了後、上のテキストを相手に送ってね");
+    };
+
+    document.getElementById("setOfferBtn").onclick = async () => {
+      await createPeerConnection(false);
+      await setRemoteDescriptionFromBox("offer");
+      logStatus("オファー受信 → アンサー生成。テキストをホストに返してね");
+    };
+
+    document.getElementById("setAnswerBtn").onclick = async () => {
+      await setRemoteDescriptionFromBox("answer");
+      logStatus("アンサー設定完了。接続待ち…");
+    };
+
+    function sendMessage(msg) {
+      if (dataChannel && dataChannel.readyState === "open") {
+        dataChannel.send(JSON.stringify(msg));
+      }
+    }
+
+    // ====== ゲームロジック ======
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    // 色ごとの能力：
+    // 赤: 攻撃モード（相手に触れると相手がスタートに戻る）
+    // 緑: ステルスモード（緑ゾーンでは半透明＆相手の攻撃を受けない）
+    // 青: スピード＆ジャンプモード（移動速度アップ＆ジャンプ可能）
+    const COLORS = [
+      { name: "赤", code: "#ff5555", ability: "attack" },
+      { name: "緑", code: "#55ff55", ability: "stealth" },
+      { name: "青", code: "#5599ff", ability: "speed" }
+    ];
+
+    // フィールド構成
+    const zones = [
+      { x: 0,   y: 0,   w: 260, h: 450, colorIndex: 0 }, // 赤ゾーン
+      { x: 260, y: 0,   w: 280, h: 450, colorIndex: 1 }, // 緑ゾーン
+      { x: 540, y: 0,   w: 260, h: 450, colorIndex: 2 }  // 青ゾーン
+    ];
+
+    const platforms = [
+      { x: 80,  y: 360, w: 120, h: 10 },
+      { x: 320, y: 300, w: 160, h: 10 },
+      { x: 600, y: 260, w: 120, h: 10 },
+      { x: 420, y: 180, w: 120, h: 10 }
+    ];
+
+    const goal = { x: 720, y: 60, r: 25 }; // ゴール地点
+
+    const gravity = 0.4;
+
+    const myChameleon = {
+      x: 60,
+      y: 380,
+      vx: 0,
+      vy: 0,
+      r: 18,
+      colorIndex: 0,
+      baseSpeed: 2.2,
+      isMe: true,
+      onGround: false,
+      respawnX: 60,
+      respawnY: 380
+    };
+
+    const remoteChameleon = {
+      x: 740,
+      y: 380,
+      vx: 0,
+      vy: 0,
+      r: 18,
+      colorIndex: 2,
+      isMe: false,
+      onGround: false,
+      respawnX: 740,
+      respawnY: 380
+    };
+
+    let keys = {};
+    let winnerText = "";
+    let lastColorChange = 0;
+
+    window.addEventListener("keydown", (e) => {
+      keys[e.key] = true;
+    });
+    window.addEventListener("keyup", (e) => {
+      keys[e.key] = false;
+    });
+
+    function getAbility(ch) {
+      return COLORS[ch.colorIndex].ability;
+    }
+
+    function updateMyChameleon() {
+      const ability = getAbility(myChameleon);
+      const speed = ability === "speed" ? myChameleon.baseSpeed * 1.8 : myChameleon.baseSpeed;
+
+      // 横移動
+      if (keys["ArrowLeft"]) myChameleon.vx = -speed;
+      else if (keys["ArrowRight"]) myChameleon.vx = speed;
+      else myChameleon.vx = 0;
+
+      // ジャンプ（青のときだけ）
+      if (ability === "speed" && keys["ArrowUp"] && myChameleon.onGround) {
+        myChameleon.vy = -8;
+        myChameleon.onGround = false;
+      }
+
+      // 色変更（スペース、連打防止）
+      if (keys[" "] && performance.now() - lastColorChange > 200) {
+        myChameleon.colorIndex = (myChameleon.colorIndex + 1) % COLORS.length;
+        lastColorChange = performance.now();
+      }
+
+      // 重力
+      myChameleon.vy += gravity;
+
+      // 位置更新
+      myChameleon.x += myChameleon.vx;
+      myChameleon.y += myChameleon.vy;
+
+      // 画面外制限
+      myChameleon.x = Math.max(myChameleon.r, Math.min(canvas.width - myChameleon.r, myChameleon.x));
+      if (myChameleon.y > canvas.height - myChameleon.r) {
+        myChameleon.y = canvas.height - myChameleon.r;
+        myChameleon.vy = 0;
+        myChameleon.onGround = true;
+      }
+
+      // プラットフォームとの当たり判定（簡易）
+      myChameleon.onGround = false;
+      platforms.forEach(p => {
+        if (
+          myChameleon.x > p.x &&
+          myChameleon.x < p.x + p.w &&
+          myChameleon.y + myChameleon.r > p.y &&
+          myChameleon.y + myChameleon.r < p.y + p.h + 10 &&
+          myChameleon.vy >= 0
+        ) {
+          myChameleon.y = p.y - myChameleon.r;
+          myChameleon.vy = 0;
+          myChameleon.onGround = true;
+        }
+      });
+
+      // 自分の状態を送信
+      sendMessage({
+        type: "state",
+        x: myChameleon.x,
+        y: myChameleon.y,
+        colorIndex: myChameleon.colorIndex
+      });
+    }
+
+    function handleRemoteMessage(msg) {
+      if (msg.type === "state") {
+        remoteChameleon.x = msg.x;
+        remoteChameleon.y = msg.y;
+        remoteChameleon.colorIndex = msg.colorIndex;
+      } else if (msg.type === "win") {
+        winnerText = msg.text;
+      } else if (msg.type === "respawn") {
+        remoteChameleon.x = remoteChameleon.respawnX;
+        remoteChameleon.y = remoteChameleon.respawnY;
+      }
+    }
+
+    function getZoneAt(x, y) {
+      return zones.find(z => x > z.x && x < z.x + z.w && y > z.y && y < z.y + z.h);
+    }
+
+    function checkInteractions() {
+      if (winnerText) return;
+
+      const myAbility = getAbility(myChameleon);
+      const remoteAbility = getAbility(remoteChameleon);
+
+      const myZone = getZoneAt(myChameleon.x, myChameleon.y);
+      const remoteZone = getZoneAt(remoteChameleon.x, remoteChameleon.y);
+
+      // 攻撃判定（赤 vs 非ステルス）
+      const dx = myChameleon.x - remoteChameleon.x;
+      const dy = myChameleon.y - remoteChameleon.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      const remoteInStealthZone =
+        remoteAbility === "stealth" &&
+        remoteZone &&
+        remoteZone.colorIndex === remoteChameleon.colorIndex;
+
+      if (dist < myChameleon.r + remoteChameleon.r + 4) {
+        if (myAbility === "attack" && !remoteInStealthZone) {
+          // 相手をリスポーン地点に戻す
+          sendMessage({ type: "respawn" });
+        }
+      }
+
+      // ゴール判定：ゴールに触れたら勝ち
+      const dxGoal = myChameleon.x - goal.x;
+      const dyGoal = myChameleon.y - goal.y;
+      const distGoal = Math.sqrt(dxGoal * dxGoal + dyGoal * dyGoal);
+
+      if (distGoal < myChameleon.r + goal.r) {
+        winnerText = "あなたがゴール！勝ち！";
+        sendMessage({ type: "win", text: "相手がゴール！あなたの負け…" });
+      }
+    }
+
+    function drawBackground() {
+      zones.forEach((z, i) => {
+        ctx.fillStyle = COLORS[z.colorIndex].code;
+        ctx.globalAlpha = 0.25;
+        ctx.fillRect(z.x, z.y, z.w, z.h);
+        ctx.globalAlpha = 1.0;
+        ctx.fillStyle = "#fff";
+        ctx.font = "16px sans-serif";
+        ctx.fillText(
+          COLORS[z.colorIndex].name + "ゾーン",
+          z.x + 10,
+          24
+        );
+      });
+
+      // プラットフォーム
+      ctx.fillStyle = "#888";
+      platforms.forEach(p => {
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+      });
+
+      // ゴール
+      ctx.fillStyle = "#ffd700";
+      ctx.beginPath();
+      ctx.arc(goal.x, goal.y, goal.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#000";
+      ctx.font = "14px sans-serif";
+      ctx.fillText("ゴール", goal.x - 18, goal.y + 4);
+    }
+
+    function drawChameleon(ch) {
+      const color = COLORS[ch.colorIndex].code;
+      const ability = getAbility(ch);
+
+      // ステルス：緑ゾーンにいるとき半透明
+      const zone = getZoneAt(ch.x, ch.y);
+      if (ability === "stealth" && zone && zone.colorIndex === ch.colorIndex) {
+        ctx.globalAlpha = 0.4;
+      } else {
+        ctx.globalAlpha = 1.0;
+      }
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(ch.x, ch.y, ch.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 目
+      ctx.fillStyle = "#fff";
+      ctx.beginPath();
+      ctx.arc(ch.x + ch.r / 2, ch.y - ch.r / 3, ch.r / 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#000";
+      ctx.beginPath();
+      ctx.arc(ch.x + ch.r / 2, ch.y - ch.r / 3, ch.r / 8, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.globalAlpha = 1.0;
+    }
+
+    function drawUI() {
+      ctx.fillStyle = "#fff";
+      ctx.font = "16px sans-serif";
+      ctx.fillText("矢印キー: 移動 / （青のとき）↑でジャンプ / スペース: 色チェンジ", 10, 430);
+
+      const myAbility = getAbility(myChameleon);
+      ctx.fillText(
+        "あなたの色: " + COLORS[myChameleon.colorIndex].name +
+        "（能力: " +
+        (myAbility === "attack" ? "攻撃" :
+         myAbility === "stealth" ? "ステルス" :
+         "スピード＆ジャンプ") +
+        "）",
+        10,
+        410
+      );
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawBackground();
+      drawChameleon(myChameleon);
+      drawChameleon(remoteChameleon);
+      drawUI();
+
+      if (winnerText) {
+        ctx.fillStyle = "#fff";
+        ctx.font = "28px sans-serif";
+        ctx.fillText(winnerText, 200, 220);
+      }
+    }
+
+    function loop() {
+      updateMyChameleon();
+      checkInteractions();
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    loop();
+  </script>
+</body>
+</html>
