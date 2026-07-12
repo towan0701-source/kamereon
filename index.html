@@ -178,14 +178,14 @@ function updateMyChameleon() {
   const ability = getAbility(myColorIndex);
   const speed = ability === "speed" ? baseSpeed * 2 : baseSpeed;
 
-  /* ---- WASD移動（カメラ向きに完全一致） ---- */
+  /* ---- WASD移動（反転修正済み） ---- */
   let moveX = 0;
   let moveZ = 0;
 
-  if (keys["w"]) moveZ = -speed;
-  if (keys["s"]) moveZ =  speed;
-  if (keys["a"]) moveX = -speed;
-  if (keys["d"]) moveX =  speed;
+  if (keys["w"]) moveZ =  speed;   // 前進
+  if (keys["s"]) moveZ = -speed;   // 後退
+  if (keys["a"]) moveX = -speed;   // 左
+  if (keys["d"]) moveX =  speed;   // 右
 
   const angle = camera.rotation.y;
   const sin = Math.sin(angle);
