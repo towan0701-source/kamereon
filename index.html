@@ -75,7 +75,7 @@ scene.add(playerVisual);
 // プレイヤー（赤＝当たり判定）
 // ============================
 const playerHitbox = new THREE.Mesh(
-  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.BoxGeometry(0.6, 0.6, 0.6), // ← 小さくして透明壁を防ぐ
   new THREE.MeshStandardMaterial({ color: 0xff0000, transparent:true, opacity:0.3 })
 );
 scene.add(playerHitbox);
@@ -229,15 +229,15 @@ function updatePlayer() {
   playerHitbox.position.x -= moveX * cos;
   playerHitbox.position.z += moveX * sin;
 
-  // ---- 押し戻し式の当たり判定 ----
+  // ---- 押し戻し式の当たり判定（弱め） ----
   for (const obs of obstacles) {
     if (isColliding(playerHitbox, obs)) {
 
       const dx = playerHitbox.position.x - oldX;
       const dz = playerHitbox.position.z - oldZ;
 
-      playerHitbox.position.x -= dx * 1.2;
-      playerHitbox.position.z -= dz * 1.2;
+      playerHitbox.position.x -= dx * 0.5;
+      playerHitbox.position.z -= dz * 0.5;
 
       break;
     }
