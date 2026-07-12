@@ -2,23 +2,94 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>Three.js めっちゃカメレオン 3D</title>
+  <title>Three.js めっちゃカメレオン 3D オンライン</title>
   <style>
     body { margin:0; overflow:hidden; background:#111; color:#fff; font-family:sans-serif; }
     #info { position:fixed; top:10px; left:10px; z-index:10; }
+    #status { position:fixed; top:30px; left:10px; z-index:10; }
+    #invite-area { position:fixed; top:60px; left:10px; z-index:10; background:#222; padding:10px; border-radius:8px; max-width:400px; }
+    #share-url { word-break:break-all; background:#333; padding:8px; border-radius:6px; margin-top:4px; }
+    button { padding:4px 8px; cursor:pointer; }
   </style>
 </head>
 <body>
 <div id="info">
   ← → : 移動 / ↑ : ジャンプ / スペース : 色チェンジ
 </div>
+<div id="status">通信準備中...</div>
+<div id="invite-area" style="display:none;">
+  <p>👇 このURLを友達に送ってね！</p>
+  <div id="share-url"></div>
+  <button onclick="copyURL()">URLをコピー</button>
+</div>
 
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
+/* ============================
+   PeerJS 通信
+============================ */
+let peer = null;
+let conn = null;
+let isHost = false;
+
+const statusEl = document.getElementById("status");
+const inviteArea = document.getElementById("invite-area");
+const shareUrlEl = document.getElementById("share-url");
+
+const urlParams = new URLSearchParams(location.search);
+const roomId = urlParams.get("room");
+
+if (!roomId) {
+  // ホスト
+  isHost = true;
+  peer = new Peer();
+  peer.on("open", id => {
+    statusEl.innerText = "友達の参加を待っています...";
+    inviteArea.style.display = "block";
+    const inviteUrl = `${location.origin}${location.pathname}?room=${id}`;
+    shareUrlEl.innerText = inviteUrl;
+  });
+  peer.on("connection", connection => {
+    conn = connection;
+    setupConnection();
+  });
+} else {
+  // ゲスト
+  isHost = false;
+  peer = new Peer();
+  peer.on("open", () => {
+    statusEl.innerText = "友達に接続中...";
+    conn = peer.connect(roomId);
+    setupConnection();
+  });
+}
+
+function setupConnection() {
+  conn.on("open", () => {
+    statusEl.innerText = "接続しました！オンラインカメレオン開始！";
+    inviteArea.style.display = "none";
+  });
+  conn.on("data", msg => {
+    handleRemoteMessage(msg);
+  });
+  conn.on("close", () => {
+    statusEl.innerText = "通信が切断されました。";
+  });
+}
+
+function sendMessage(msg) {
+  if (conn && conn.open) conn.send(msg);
+}
+
+function copyURL() {
+  navigator.clipboard.writeText(shareUrlEl.innerText);
+  alert("URLをコピーしました！");
+}
+
 /* ============================
    Three.js 基本セット
 ============================ */
-
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x111111);
 
@@ -31,9 +102,6 @@ const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-/* ============================
-   ライト
-============================ */
 const light = new THREE.DirectionalLight(0xffffff, 1);
 light.position.set(5, 10, 5);
 scene.add(light);
@@ -62,17 +130,24 @@ for (let i = 0; i < 3; i++) {
 }
 
 /* ============================
-   カメレオン（箱型）
+   カメレオン（自分＆相手）
 ============================ */
-let colorIndex = 0;
+let myColorIndex = 0;
 
 const chamGeo = new THREE.BoxGeometry(1, 1, 2);
-const chamMat = new THREE.MeshStandardMaterial({
-  color: zoneColors[colorIndex].color
+const myChamMat = new THREE.MeshStandardMaterial({
+  color: zoneColors[myColorIndex].color
 });
-const chameleon = new THREE.Mesh(chamGeo, chamMat);
-chameleon.position.set(-6, 1, 0);
-scene.add(chameleon);
+const myCham = new THREE.Mesh(chamGeo, myChamMat);
+myCham.position.set(-6, 1, 0);
+scene.add(myCham);
+
+const oppChamMat = new THREE.MeshStandardMaterial({
+  color: 0x8888ff
+});
+const oppCham = new THREE.Mesh(chamGeo, oppChamMat);
+oppCham.position.set(6, 1, 0);
+scene.add(oppCham);
 
 /* ============================
    状態変数
@@ -87,80 +162,87 @@ let lastColorChange = 0;
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key] = true);
 window.addEventListener("keyup",   e => keys[e.key] = false);
-/* ============================
-   能力判定
-============================ */
-function getAbility() {
-  return zoneColors[colorIndex].ability;
+
+function getAbility(index) {
+  return zoneColors[index].ability;
 }
 
-/* ============================
-   ゾーン判定
-============================ */
 function getZoneAt(x) {
-  if (x < -3) return 0;   // 赤ゾーン
-  if (x < 3)  return 1;   // 緑ゾーン
-  return 2;               // 青ゾーン
+  if (x < -3) return 0;
+  if (x < 3)  return 1;
+  return 2;
 }
 
 /* ============================
-   カメレオン更新
+   自分の更新＆送信
 ============================ */
-function updateChameleon() {
-  const ability = getAbility();
+function updateMyChameleon() {
+  const ability = getAbility(myColorIndex);
   const speed = ability === "speed" ? baseSpeed * 2 : baseSpeed;
 
-  // 横移動
   if (keys["ArrowLeft"])      vx = -speed;
   else if (keys["ArrowRight"]) vx = speed;
   else                         vx = 0;
 
-  // ジャンプ（青のときだけ）
   if (ability === "speed" && keys["ArrowUp"] && onGround) {
     vy = 0.2;
     onGround = false;
   }
 
-  // 色チェンジ（スペース）
   if (keys[" "] && performance.now() - lastColorChange > 200) {
-    colorIndex = (colorIndex + 1) % zoneColors.length;
-    chamMat.color.setHex(zoneColors[colorIndex].color);
+    myColorIndex = (myColorIndex + 1) % zoneColors.length;
+    myChamMat.color.setHex(zoneColors[myColorIndex].color);
     lastColorChange = performance.now();
   }
 
-  // 重力
   vy += gravity;
 
-  // 位置更新
-  chameleon.position.x += vx;
-  chameleon.position.y += vy;
+  myCham.position.x += vx;
+  myCham.position.y += vy;
 
-  // 地面判定
-  if (chameleon.position.y <= 1) {
-    chameleon.position.y = 1;
+  if (myCham.position.y <= 1) {
+    myCham.position.y = 1;
     vy = 0;
     onGround = true;
   }
 
-  // ステルス（緑ゾーン＋緑色）
-  const zoneIndex = getZoneAt(chameleon.position.x);
-  if (ability === "stealth" && zoneIndex === colorIndex) {
-    chamMat.transparent = true;
-    chamMat.opacity = 0.3;
+  const zoneIndex = getZoneAt(myCham.position.x);
+  if (ability === "stealth" && zoneIndex === myColorIndex) {
+    myChamMat.transparent = true;
+    myChamMat.opacity = 0.3;
   } else {
-    chamMat.transparent = false;
-    chamMat.opacity = 1.0;
+    myChamMat.transparent = false;
+    myChamMat.opacity = 1.0;
   }
 
-  // 回転してそれっぽく
-  chameleon.rotation.y += 0.02;
+  myCham.rotation.y += 0.02;
+
+  // 相手に状態送信
+  sendMessage({
+    type: "state",
+    x: myCham.position.x,
+    y: myCham.position.y,
+    colorIndex: myColorIndex
+  });
 }
+
 /* ============================
-   描画
+   相手からのメッセージ処理
+============================ */
+function handleRemoteMessage(msg) {
+  if (msg.type === "state") {
+    oppCham.position.x = msg.x;
+    oppCham.position.y = msg.y;
+    oppChamMat.color.setHex(zoneColors[msg.colorIndex].color);
+  }
+}
+
+/* ============================
+   描画＆ループ
 ============================ */
 function animate() {
   requestAnimationFrame(animate);
-  updateChameleon();
+  updateMyChameleon();
   renderer.render(scene, camera);
 }
 animate();
