@@ -169,8 +169,9 @@ function getZoneAt(x) {
   if (x < 3)  return 1;
   return 2;
 }
+
 /* ============================
-   自分のカメレオン更新（WASD移動＋ジャンプ＋色チェンジ）
+   自分のカメレオン更新
 ============================ */
 function updateMyChameleon() {
 
@@ -186,7 +187,6 @@ function updateMyChameleon() {
   if (keys["a"]) moveX = -speed;
   if (keys["d"]) moveX =  speed;
 
-  // カメラの向きに合わせて移動方向を回転
   const angle = camera.rotation.y;
   const sin = Math.sin(angle);
   const cos = Math.cos(angle);
@@ -194,13 +194,13 @@ function updateMyChameleon() {
   myCham.position.x += (moveX * cos - moveZ * sin);
   myCham.position.z += (moveZ * cos + moveX * sin);
 
-  /* ---- ジャンプ（青のときだけ） ---- */
+  /* ---- ジャンプ（青能力） ---- */
   if (ability === "speed" && keys["arrowup"] && onGround) {
     vy = 0.2;
     onGround = false;
   }
 
-  /* ---- 色チェンジ（スペース） ---- */
+  /* ---- 色チェンジ ---- */
   if (keys[" "] && performance.now() - lastColorChange > 200) {
     myColorIndex = (myColorIndex + 1) % zoneColors.length;
     myChamMat.color.setHex(zoneColors[myColorIndex].color);
@@ -217,7 +217,7 @@ function updateMyChameleon() {
     onGround = true;
   }
 
-  /* ---- ステルス（緑ゾーン＋緑色） ---- */
+  /* ---- ステルス ---- */
   const zoneIndex = getZoneAt(myCham.position.x);
   if (ability === "stealth" && zoneIndex === myColorIndex) {
     myChamMat.transparent = true;
@@ -227,7 +227,7 @@ function updateMyChameleon() {
     myChamMat.opacity = 1.0;
   }
 
-  /* ---- 回転してそれっぽく ---- */
+  /* ---- 回転 ---- */
   myCham.rotation.y += 0.02;
 
   /* ---- オンライン同期 ---- */
@@ -241,7 +241,7 @@ function updateMyChameleon() {
 }
 
 /* ============================
-   相手の状態を反映
+   相手の状態反映
 ============================ */
 function handleRemoteMessage(msg) {
   if (msg.type === "state") {
@@ -261,22 +261,32 @@ function updateCameraRotation() {
   if (keys["arrowup"])    camera.rotation.x += 0.02;
   if (keys["arrowdown"])  camera.rotation.x -= 0.02;
 
-  // 上下の向きを制限
   camera.rotation.x = Math.max(-1.2, Math.min(1.2, camera.rotation.x));
 }
+
 /* ============================
-   描画ループ
+   描画ループ（TPSカメラ追跡）
 ============================ */
 function animate() {
   requestAnimationFrame(animate);
 
-  // カメラ回転（矢印キー）
   updateCameraRotation();
-
-  // 自分のカメレオン更新（WASD移動など）
   updateMyChameleon();
 
-  // 描画
+  /* ---- TPSカメラ追跡 ---- */
+  const camDistance = 8;
+  const camHeight   = 4;
+
+  const angle = camera.rotation.y;
+  const offsetX = Math.sin(angle) * camDistance;
+  const offsetZ = Math.cos(angle) * camDistance;
+
+  camera.position.x += ((myCham.position.x - offsetX) - camera.position.x) * 0.1;
+  camera.position.y += ((myCham.position.y + camHeight) - camera.position.y) * 0.1;
+  camera.position.z += ((myCham.position.z - offsetZ) - camera.position.z) * 0.1;
+
+  camera.lookAt(myCham.position);
+
   renderer.render(scene, camera);
 }
 animate();
