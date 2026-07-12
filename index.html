@@ -178,7 +178,7 @@ function updateMyChameleon() {
   const ability = getAbility(myColorIndex);
   const speed = ability === "speed" ? baseSpeed * 2 : baseSpeed;
 
-  /* ---- WASD移動（反転修正済み） ---- */
+  /* ---- WASD移動（左右反転修正済み） ---- */
   let moveX = 0;
   let moveZ = 0;
 
@@ -195,9 +195,9 @@ function updateMyChameleon() {
   myCham.position.x += moveZ * sin;
   myCham.position.z += moveZ * cos;
 
-  // 左右（A/D）
-  myCham.position.x += moveX * cos;
-  myCham.position.z -= moveX * sin;
+  // 左右（A/D）反転修正
+  myCham.position.x -= moveX * cos;
+  myCham.position.z += moveX * sin;
 
   /* ---- ジャンプ（青能力） ---- */
   if (ability === "speed" && keys["arrowup"] && onGround) {
