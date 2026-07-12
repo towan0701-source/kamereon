@@ -29,14 +29,16 @@
 <body>
   <h1>めっちゃカメレオン P2P オンラインゲーム（URL接続版）</h1>
   <p>
-    ホストは「ホスト開始」ボタンを押すだけで、接続用 URL が生成されます。<br>
-    ゲストはその URL を開くだけで自動接続できます。
+    ホストは「ホスト開始」ボタンを押すと接続用URLが生成されます。<br>
+    ゲストはそのURLを開くだけで参加できます。<br>
+    ゲストが生成したアンサーをホストが貼り付けて「アンサー設定」を押すと接続が完了します。
   </p>
 
   <div id="ui">
     <button id="hostBtn">ホスト開始（URL生成）</button>
-    <textarea id="shareBox" cols="60" rows="4"
-      placeholder="ホストが生成したURLがここに表示されます"></textarea>
+    <button id="setAnswerBtn">アンサー設定（ホスト）</button>
+    <textarea id="shareBox" cols="60" rows="6"
+      placeholder="ホストのURL、またはゲストのアンサーがここに表示されます"></textarea>
     <div>
       <span>接続状態: </span><span id="connStatus">未接続</span>
     </div>
@@ -134,6 +136,19 @@
           JSON.stringify(pc.localDescription);
       }
     });
+
+    // ============================
+    //  ホストがアンサーを設定する
+    // ============================
+    document.getElementById("setAnswerBtn").onclick = async () => {
+      try {
+        const sdp = JSON.parse(shareBox.value);
+        await pc.setRemoteDescription(sdp);
+        logStatus("アンサー設定完了！接続が成立しました");
+      } catch (e) {
+        alert("アンサーのJSONが正しくありません");
+      }
+    };
 
     // ============================
     //  ホスト開始ボタン
