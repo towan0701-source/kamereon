@@ -14,7 +14,7 @@
 </head>
 <body>
 <div id="info">
-  WASD: 移動 / スペース: 色チェンジ / ↑キー: ジャンプ（青能力）
+  WASD: 移動 / ↑キー: ジャンプ（青能力） / スペース: 色チェンジ
 </div>
 <div id="status">通信準備中...</div>
 <div id="invite-area" style="display:none;">
@@ -178,7 +178,7 @@ function updateMyChameleon() {
   const ability = getAbility(myColorIndex);
   const speed = ability === "speed" ? baseSpeed * 2 : baseSpeed;
 
-  /* ---- WASD移動（カメラ向きに合わせる） ---- */
+  /* ---- WASD移動（カメラ向きに完全一致） ---- */
   let moveX = 0;
   let moveZ = 0;
 
@@ -187,13 +187,17 @@ function updateMyChameleon() {
   if (keys["a"]) moveX = -speed;
   if (keys["d"]) moveX =  speed;
 
-  // カメラの向きに合わせて移動方向を回転
   const angle = camera.rotation.y;
   const sin = Math.sin(angle);
   const cos = Math.cos(angle);
 
-  myCham.position.x += (moveX * cos - moveZ * sin);
-  myCham.position.z += (moveZ * cos + moveX * sin);
+  // 前後（W/S）
+  myCham.position.x += moveZ * sin;
+  myCham.position.z += moveZ * cos;
+
+  // 左右（A/D）
+  myCham.position.x += moveX * cos;
+  myCham.position.z -= moveX * sin;
 
   /* ---- ジャンプ（青能力） ---- */
   if (ability === "speed" && keys["arrowup"] && onGround) {
