@@ -44,7 +44,7 @@ floor.position.set(0, -0.5, 0);
 scene.add(floor);
 
 // ============================
-// 壁（当たり判定あり）
+// 壁（障害物扱い）
 // ============================
 function addWall(x, y, z, rotY) {
   const wall = new THREE.Mesh(
@@ -63,14 +63,22 @@ addWall(-100, 20.5, 0, Math.PI/2);
 addWall(100, 20.5, 0, Math.PI/2);
 
 // ============================
-// プレイヤー（カメレオン）
+// プレイヤー（青＝見た目）
 // ============================
-const player = new THREE.Mesh(
+const playerVisual = new THREE.Mesh(
   new THREE.BoxGeometry(1.5, 1.5, 3),
-  new THREE.MeshStandardMaterial({ color: 0xff5555 })
+  new THREE.MeshStandardMaterial({ color: 0x5599ff })
 );
-player.position.set(0, 2, 0);
-scene.add(player);
+scene.add(playerVisual);
+
+// ============================
+// プレイヤー（赤＝当たり判定）
+// ============================
+const playerHitbox = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshStandardMaterial({ color: 0xff0000, transparent:true, opacity:0.3 })
+);
+scene.add(playerHitbox);
 
 // 入力
 const keys = {};
@@ -175,7 +183,7 @@ function addBlock(x, z, w, h, d, color) {
 addBlock(0, 30, 10, 10, 10, 0xaa3333);
 addBlock(40, 0, 20, 5, 20, 0x3333aa);
 // ============================
-// AABB当たり判定（安全版）
+// AABB当たり判定（赤い箱だけ）
 // ============================
 function isColliding(a, b) {
   a.geometry.computeBoundingBox();
@@ -194,13 +202,13 @@ function isColliding(a, b) {
 }
 
 // ============================
-// プレイヤー更新（押し戻し式）
+// プレイヤー更新（赤い箱だけ動かす）
 // ============================
 function updatePlayer() {
 
-  const oldX = player.position.x;
-  const oldY = player.position.y;
-  const oldZ = player.position.z;
+  const oldX = playerHitbox.position.x;
+  const oldY = playerHitbox.position.y;
+  const oldZ = playerHitbox.position.z;
 
   let moveX = 0;
   let moveZ = 0;
@@ -214,23 +222,22 @@ function updatePlayer() {
   const sin = Math.sin(angle);
   const cos = Math.cos(angle);
 
-  // 前後
-  player.position.x += moveZ * sin;
-  player.position.z += moveZ * cos;
+  // 赤い当たり判定を動かす
+  playerHitbox.position.x += moveZ * sin;
+  playerHitbox.position.z += moveZ * cos;
 
-  // 左右
-  player.position.x -= moveX * cos;
-  player.position.z += moveX * sin;
+  playerHitbox.position.x -= moveX * cos;
+  playerHitbox.position.z += moveX * sin;
 
   // ---- 押し戻し式の当たり判定 ----
   for (const obs of obstacles) {
-    if (isColliding(player, obs)) {
+    if (isColliding(playerHitbox, obs)) {
 
-      const dx = player.position.x - oldX;
-      const dz = player.position.z - oldZ;
+      const dx = playerHitbox.position.x - oldX;
+      const dz = playerHitbox.position.z - oldZ;
 
-      player.position.x -= dx * 1.2;
-      player.position.z -= dz * 1.2;
+      playerHitbox.position.x -= dx * 1.2;
+      playerHitbox.position.z -= dz * 1.2;
 
       break;
     }
@@ -243,13 +250,16 @@ function updatePlayer() {
   }
 
   vy += gravity;
-  player.position.y += vy;
+  playerHitbox.position.y += vy;
 
-  if (player.position.y <= 2) {
-    player.position.y = 2;
+  if (playerHitbox.position.y <= 2) {
+    playerHitbox.position.y = 2;
     vy = 0;
     onGround = true;
   }
+
+  // 青い見た目を赤い当たり判定に追従
+  playerVisual.position.copy(playerHitbox.position);
 }
 // ============================
 // TPSカメラ追跡
@@ -262,11 +272,11 @@ function updateCamera() {
   const offsetX = Math.sin(angle) * dist;
   const offsetZ = Math.cos(angle) * dist;
 
-  camera.position.x += ((player.position.x - offsetX) - camera.position.x) * 0.1;
-  camera.position.y += ((player.position.y + height) - camera.position.y) * 0.1;
-  camera.position.z += ((player.position.z - offsetZ) - camera.position.z) * 0.1;
+  camera.position.x += ((playerHitbox.position.x - offsetX) - camera.position.x) * 0.1;
+  camera.position.y += ((playerHitbox.position.y + height) - camera.position.y) * 0.1;
+  camera.position.z += ((playerHitbox.position.z - offsetZ) - camera.position.z) * 0.1;
 
-  camera.lookAt(player.position);
+  camera.lookAt(playerHitbox.position);
 }
 
 // ============================
