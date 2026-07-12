@@ -5,16 +5,38 @@
   <title>Chameleon 3D Online</title>
   <style>
     body { margin:0; overflow:hidden; background:#111; color:#fff; }
-    #invite { position:fixed; top:10px; left:10px; background:#222; padding:10px; border-radius:8px; }
-    #invite button { margin-top:5px; }
+
+    #invite {
+      position:fixed; top:10px; left:10px;
+      background:#222; padding:10px; border-radius:8px;
+    }
+
+    #paintUI {
+      position:fixed; top:10px; right:10px;
+      background:#222; padding:10px; border-radius:8px;
+      display:flex; gap:5px;
+    }
+
+    #paintUI button {
+      width:30px; height:30px; border:none; cursor:pointer;
+    }
   </style>
 </head>
 <body>
 
+<!-- 招待URL -->
 <div id="invite" style="display:none;">
   <div>👇 このURLを友達に送ってね！</div>
   <div id="inviteURL" style="word-break:break-all; margin-top:5px;"></div>
   <button onclick="copyInvite()">コピー</button>
+</div>
+
+<!-- 🎨 ペイントUI（右上） -->
+<div id="paintUI">
+  <button style="background:#ff5555;" onclick="paintSelf('#ff5555')"></button>
+  <button style="background:#55ff55;" onclick="paintSelf('#55ff55')"></button>
+  <button style="background:#5599ff;" onclick="paintSelf('#5599ff')"></button>
+  <button style="background:#ffff55;" onclick="paintSelf('#ffff55')"></button>
 </div>
 
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
@@ -329,7 +351,21 @@ function updatePlayer() {
     type: "state",
     x: playerHitbox.position.x,
     y: playerHitbox.position.y,
-    z: playerHitbox.position.z
+    z: playerHitbox.position.z,
+    color: playerVisual.material.color.getHex()
+  });
+}
+
+// ============================
+// ペイント（自分の色変更）
+// ============================
+function paintSelf(colorHex) {
+  playerVisual.material.color.set(colorHex);
+
+  // 色変更をオンライン送信
+  sendState({
+    type: "paint",
+    color: colorHex
   });
 }
 
@@ -337,9 +373,15 @@ function updatePlayer() {
 // 相手プレイヤー反映
 // ============================
 function handleRemoteMessage(msg) {
+
   if (msg.type === "state") {
     oppHitbox.position.set(msg.x, msg.y, msg.z);
     oppVisual.position.copy(oppHitbox.position);
+    oppVisual.material.color.setHex(msg.color);
+  }
+
+  if (msg.type === "paint") {
+    oppVisual.material.color.set(msg.color);
   }
 }
 // ============================
