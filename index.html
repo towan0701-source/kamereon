@@ -6,6 +6,7 @@
   <style>
     body { margin:0; overflow:hidden; background:#111; color:#fff; }
     #invite { position:fixed; top:10px; left:10px; background:#222; padding:10px; border-radius:8px; }
+    #invite button { margin-top:5px; }
   </style>
 </head>
 <body>
@@ -13,6 +14,7 @@
 <div id="invite" style="display:none;">
   <div>👇 このURLを友達に送ってね！</div>
   <div id="inviteURL" style="word-break:break-all; margin-top:5px;"></div>
+  <button onclick="copyInvite()">コピー</button>
 </div>
 
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
@@ -32,6 +34,11 @@ const roomId = params.get("room");
 const inviteBox = document.getElementById("invite");
 const inviteURL = document.getElementById("inviteURL");
 
+function copyInvite() {
+  navigator.clipboard.writeText(inviteURL.innerText);
+  alert("コピーしました！");
+}
+
 if (!roomId) {
   // ---- ホスト側 ----
   isHost = true;
@@ -46,6 +53,9 @@ if (!roomId) {
   peer.on("connection", c => {
     conn = c;
     setupConnection();
+
+    // ★ 接続されたら招待URLを消す
+    inviteBox.style.display = "none";
   });
 
 } else {
@@ -63,7 +73,6 @@ function setupConnection() {
   conn.on("data", msg => handleRemoteMessage(msg));
 }
 
-// 送信
 function sendState(msg) {
   if (conn && conn.open) conn.send(msg);
 }
