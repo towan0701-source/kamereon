@@ -14,7 +14,7 @@
 </head>
 <body>
 <div id="info">
-  ← → : 移動 / ↑ : ジャンプ / スペース : 色チェンジ
+  WASD: 移動 / ↑↓←→: カメラ回転 / スペース: 色チェンジ
 </div>
 <div id="status">通信準備中...</div>
 <div id="invite-area" style="display:none;">
@@ -41,7 +41,6 @@ const urlParams = new URLSearchParams(location.search);
 const roomId = urlParams.get("room");
 
 if (!roomId) {
-  // ホスト
   isHost = true;
   peer = new Peer();
   peer.on("open", id => {
@@ -55,7 +54,6 @@ if (!roomId) {
     setupConnection();
   });
 } else {
-  // ゲスト
   isHost = false;
   peer = new Peer();
   peer.on("open", () => {
@@ -67,15 +65,11 @@ if (!roomId) {
 
 function setupConnection() {
   conn.on("open", () => {
-    statusEl.innerText = "接続しました！オンラインカメレオン開始！";
+    statusEl.innerText = "接続しました！オンライン開始！";
     inviteArea.style.display = "none";
   });
-  conn.on("data", msg => {
-    handleRemoteMessage(msg);
-  });
-  conn.on("close", () => {
-    statusEl.innerText = "通信が切断されました。";
-  });
+  conn.on("data", msg => handleRemoteMessage(msg));
+  conn.on("close", () => statusEl.innerText = "通信が切断されました。");
 }
 
 function sendMessage(msg) {
@@ -150,6 +144,13 @@ oppCham.position.set(6, 1, 0);
 scene.add(oppCham);
 
 /* ============================
+   入力（WASD + 矢印キー）
+============================ */
+const keys = {};
+window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
+window.addEventListener("keyup",   e => keys[e.key.toLowerCase()] = false);
+
+/* ============================
    状態変数
 ============================ */
 let vx = 0;
@@ -158,10 +159,6 @@ const baseSpeed = 0.05;
 const gravity = -0.01;
 let onGround = true;
 let lastColorChange = 0;
-
-const keys = {};
-window.addEventListener("keydown", e => keys[e.key] = true);
-window.addEventListener("keyup",   e => keys[e.key] = false);
 
 function getAbility(index) {
   return zoneColors[index].ability;
@@ -172,32 +169,46 @@ function getZoneAt(x) {
   if (x < 3)  return 1;
   return 2;
 }
-
 /* ============================
-   自分の更新＆送信
+   自分のカメレオン更新（WASD移動＋ジャンプ＋色チェンジ）
 ============================ */
 function updateMyChameleon() {
+
   const ability = getAbility(myColorIndex);
   const speed = ability === "speed" ? baseSpeed * 2 : baseSpeed;
 
-  if (keys["ArrowLeft"])      vx = -speed;
-  else if (keys["ArrowRight"]) vx = speed;
-  else                         vx = 0;
+  /* ---- WASD移動 ---- */
+  let moveX = 0;
+  let moveZ = 0;
 
-  if (ability === "speed" && keys["ArrowUp"] && onGround) {
+  if (keys["w"]) moveZ = -speed;
+  if (keys["s"]) moveZ =  speed;
+  if (keys["a"]) moveX = -speed;
+  if (keys["d"]) moveX =  speed;
+
+  // カメラの向きに合わせて移動方向を回転
+  const angle = camera.rotation.y;
+  const sin = Math.sin(angle);
+  const cos = Math.cos(angle);
+
+  myCham.position.x += (moveX * cos - moveZ * sin);
+  myCham.position.z += (moveZ * cos + moveX * sin);
+
+  /* ---- ジャンプ（青のときだけ） ---- */
+  if (ability === "speed" && keys["arrowup"] && onGround) {
     vy = 0.2;
     onGround = false;
   }
 
+  /* ---- 色チェンジ（スペース） ---- */
   if (keys[" "] && performance.now() - lastColorChange > 200) {
     myColorIndex = (myColorIndex + 1) % zoneColors.length;
     myChamMat.color.setHex(zoneColors[myColorIndex].color);
     lastColorChange = performance.now();
   }
 
+  /* ---- 重力 ---- */
   vy += gravity;
-
-  myCham.position.x += vx;
   myCham.position.y += vy;
 
   if (myCham.position.y <= 1) {
@@ -206,6 +217,7 @@ function updateMyChameleon() {
     onGround = true;
   }
 
+  /* ---- ステルス（緑ゾーン＋緑色） ---- */
   const zoneIndex = getZoneAt(myCham.position.x);
   if (ability === "stealth" && zoneIndex === myColorIndex) {
     myChamMat.transparent = true;
@@ -215,34 +227,56 @@ function updateMyChameleon() {
     myChamMat.opacity = 1.0;
   }
 
+  /* ---- 回転してそれっぽく ---- */
   myCham.rotation.y += 0.02;
 
-  // 相手に状態送信
+  /* ---- オンライン同期 ---- */
   sendMessage({
     type: "state",
     x: myCham.position.x,
     y: myCham.position.y,
+    z: myCham.position.z,
     colorIndex: myColorIndex
   });
 }
 
 /* ============================
-   相手からのメッセージ処理
+   相手の状態を反映
 ============================ */
 function handleRemoteMessage(msg) {
   if (msg.type === "state") {
     oppCham.position.x = msg.x;
     oppCham.position.y = msg.y;
+    oppCham.position.z = msg.z;
     oppChamMat.color.setHex(zoneColors[msg.colorIndex].color);
   }
 }
 
 /* ============================
-   描画＆ループ
+   カメラ回転（矢印キー）
+============================ */
+function updateCameraRotation() {
+  if (keys["arrowleft"])  camera.rotation.y += 0.03;
+  if (keys["arrowright"]) camera.rotation.y -= 0.03;
+  if (keys["arrowup"])    camera.rotation.x += 0.02;
+  if (keys["arrowdown"])  camera.rotation.x -= 0.02;
+
+  // 上下の向きを制限
+  camera.rotation.x = Math.max(-1.2, Math.min(1.2, camera.rotation.x));
+}
+/* ============================
+   描画ループ
 ============================ */
 function animate() {
   requestAnimationFrame(animate);
+
+  // カメラ回転（矢印キー）
+  updateCameraRotation();
+
+  // 自分のカメレオン更新（WASD移動など）
   updateMyChameleon();
+
+  // 描画
   renderer.render(scene, camera);
 }
 animate();
