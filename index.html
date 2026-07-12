@@ -14,7 +14,7 @@
 </head>
 <body>
 <div id="info">
-  WASD: 移動 / ↑↓←→: カメラ回転 / スペース: 色チェンジ
+  WASD: 移動 / スペース: 色チェンジ / ↑キー: ジャンプ（青能力）
 </div>
 <div id="status">通信準備中...</div>
 <div id="invite-area" style="display:none;">
@@ -144,7 +144,7 @@ oppCham.position.set(6, 1, 0);
 scene.add(oppCham);
 
 /* ============================
-   入力（WASD + 矢印キー）
+   入力（WASD）
 ============================ */
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
@@ -178,7 +178,7 @@ function updateMyChameleon() {
   const ability = getAbility(myColorIndex);
   const speed = ability === "speed" ? baseSpeed * 2 : baseSpeed;
 
-  /* ---- WASD移動 ---- */
+  /* ---- WASD移動（カメラ向きに合わせる） ---- */
   let moveX = 0;
   let moveZ = 0;
 
@@ -187,6 +187,7 @@ function updateMyChameleon() {
   if (keys["a"]) moveX = -speed;
   if (keys["d"]) moveX =  speed;
 
+  // カメラの向きに合わせて移動方向を回転
   const angle = camera.rotation.y;
   const sin = Math.sin(angle);
   const cos = Math.cos(angle);
@@ -253,24 +254,11 @@ function handleRemoteMessage(msg) {
 }
 
 /* ============================
-   カメラ回転（矢印キー）
-============================ */
-function updateCameraRotation() {
-  if (keys["arrowleft"])  camera.rotation.y += 0.03;
-  if (keys["arrowright"]) camera.rotation.y -= 0.03;
-  if (keys["arrowup"])    camera.rotation.x += 0.02;
-  if (keys["arrowdown"])  camera.rotation.x -= 0.02;
-
-  camera.rotation.x = Math.max(-1.2, Math.min(1.2, camera.rotation.x));
-}
-
-/* ============================
    描画ループ（TPSカメラ追跡）
 ============================ */
 function animate() {
   requestAnimationFrame(animate);
 
-  updateCameraRotation();
   updateMyChameleon();
 
   /* ---- TPSカメラ追跡 ---- */
