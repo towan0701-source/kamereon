@@ -256,6 +256,14 @@ const playerHitbox = new THREE.Mesh(
 );
 scene.add(playerHitbox);
 
+// ---- 初期リスポーン地点 ----
+if (isHost) {
+  playerHitbox.position.set(0, 2, 0);     // ホストは中央
+} else {
+  playerHitbox.position.set(80, 2, 80);   // ゲストは遠く
+}
+playerVisual.position.copy(playerHitbox.position);
+
 // ============================
 // 相手プレイヤー（青＋赤）
 // ============================
