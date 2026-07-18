@@ -21,6 +21,18 @@
     #paintUI input {
       width:100%;
     }
+
+    #resultBox {
+      position:fixed;
+      top:50%;
+      left:50%;
+      transform:translate(-50%, -50%);
+      background:#000a;
+      padding:20px;
+      border-radius:10px;
+      font-size:30px;
+      display:none;
+    }
   </style>
 </head>
 <body>
@@ -39,6 +51,8 @@
   <input type="range" id="brushSize" min="5" max="50" value="10">
 </div>
 
+<div id="resultBox"></div>
+
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
@@ -53,6 +67,7 @@ const roomId = params.get("room");
 const inviteBox = document.getElementById("invite");
 const inviteURL = document.getElementById("inviteURL");
 const paintUI = document.getElementById("paintUI");
+const resultBox = document.getElementById("resultBox");
 
 function copyInvite() {
   navigator.clipboard.writeText(inviteURL.innerText);
@@ -133,13 +148,12 @@ floor.position.set(0, -0.5, 0);
 scene.add(floor);
 
 // ============================
-// 🔍 ズーム用変数
+// 🔍 ズーム
 // ============================
-let zoomDistance = 15;   // 初期ズーム距離
+let zoomDistance = 15;
 let zoomMin = 5;
 let zoomMax = 40;
 
-// マウスホイールでズーム
 window.addEventListener("wheel", e => {
   zoomDistance += e.deltaY * 0.02;
   zoomDistance = Math.max(zoomMin, Math.min(zoomMax, zoomDistance));
@@ -165,7 +179,7 @@ for (let i = 0; i < 6; i++) {
 }
 
 // ============================
-// プレイヤー（6面ペイント可能）
+// プレイヤー（ホスト）
 // ============================
 const playerMaterials = textureList.map(tex => {
   return new THREE.MeshStandardMaterial({ map: tex });
@@ -191,7 +205,7 @@ if (isHost) {
 playerVisual.position.copy(playerHitbox.position);
 
 // ============================
-// 相手プレイヤー（6面ペイント可能）
+// 相手プレイヤー（ゲスト）
 // ============================
 const oppCanvasList = [];
 const oppCtxList = [];
@@ -244,34 +258,32 @@ addWall(0, 20.5, -100, 0);
 addWall(0, 20.5, 100, 0);
 addWall(-100, 20.5, 0, Math.PI/2);
 addWall(100, 20.5, 0, Math.PI/2);
-
-// 車・イス・机・ブロックもそのまま
 // ============================
-// Raycaster（クリック判定）
+// Raycaster
 // ============================
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
 let painting = false;
 
+// ============================
+// 🎨 ペイント（ホストのみ）
+// ============================
 window.addEventListener("mousedown", e => {
-  if (!isHost) return;
-  painting = true;
-  paintAtMouse(e);
+  if (isHost && e.button === 0) {
+    painting = true;
+    paintAtMouse(e);
+  }
 });
 
 window.addEventListener("mousemove", e => {
-  if (!painting || !isHost) return;
-  paintAtMouse(e);
+  if (painting && isHost) paintAtMouse(e);
 });
 
 window.addEventListener("mouseup", () => {
   painting = false;
 });
 
-// ============================
-// ペイント処理（面ごと）
-// ============================
 function paintAtMouse(e) {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -282,7 +294,6 @@ function paintAtMouse(e) {
   if (hits.length > 0) {
     const uv = hits[0].uv;
     const face = hits[0].faceIndex;
-
     const materialIndex = Math.floor(face / 2);
 
     const x = uv.x * canvasList[materialIndex].width;
@@ -308,7 +319,43 @@ function paintAtMouse(e) {
 }
 
 // ============================
-// ゲスト側：受信した点を描く
+// 🔫 ゲストのレーザー光線（安全な光線）
+// ============================
+function shootLaser() {
+  if (isHost) return;
+
+  const origin = camera.position.clone();
+  const direction = new THREE.Vector3();
+  camera.getWorldDirection(direction);
+
+  raycaster.set(origin, direction);
+
+  const hits = raycaster.intersectObject(playerHitbox);
+  const hitHost = hits.length > 0;
+
+  const laserMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+  const laserGeometry = new THREE.BufferGeometry().setFromPoints([
+    origin,
+    origin.clone().add(direction.multiplyScalar(50))
+  ]);
+  const laser = new THREE.Line(laserGeometry, laserMaterial);
+  scene.add(laser);
+
+  setTimeout(() => scene.remove(laser), 200);
+
+  if (hitHost) {
+    sendState({ type: "win" });
+    resultBox.innerText = "🎉 勝ちました！";
+    resultBox.style.display = "block";
+  }
+}
+
+window.addEventListener("mousedown", e => {
+  if (!isHost && e.button === 0) shootLaser();
+});
+
+// ============================
+// メッセージ受信
 // ============================
 function handleRemoteMessage(msg) {
 
@@ -324,6 +371,11 @@ function handleRemoteMessage(msg) {
   if (msg.type === "state") {
     oppHitbox.position.set(msg.x, msg.y, msg.z);
     oppVisual.position.copy(oppHitbox.position);
+  }
+
+  if (msg.type === "win") {
+    resultBox.innerText = "💥 撃たれました… ホストの負け";
+    resultBox.style.display = "block";
   }
 }
 
