@@ -111,18 +111,11 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
 // ============================
-// 💡 明るくするライト追加
+// 💡 明るくするライト
 // ============================
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.8));
 
-// 環境光（全体を明るく）
-const ambient = new THREE.AmbientLight(0xffffff, 0.7);
-scene.add(ambient);
-
-// 空と地面の光
-const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
-scene.add(hemi);
-
-// 太陽光
 const light = new THREE.DirectionalLight(0xffffff, 1.5);
 light.position.set(20, 50, 20);
 scene.add(light);
@@ -139,24 +132,35 @@ const floor = new THREE.Mesh(
 floor.position.set(0, -0.5, 0);
 scene.add(floor);
 // ============================
-// 🎨 ペイント用 Canvas
+// 🎨 6面ペイント用 CanvasTexture
 // ============================
-const canvas = document.createElement("canvas");
-canvas.width = 512;
-canvas.height = 512;
-const ctx = canvas.getContext("2d");
+const canvasList = [];
+const ctxList = [];
+const textureList = [];
 
-ctx.fillStyle = "#ffffff";
-ctx.fillRect(0, 0, canvas.width, canvas.height);
+for (let i = 0; i < 6; i++) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 512;
+  const cx = c.getContext("2d");
+  cx.fillStyle = "#ffffff";
+  cx.fillRect(0, 0, c.width, c.height);
 
-const texture = new THREE.CanvasTexture(canvas);
+  canvasList.push(c);
+  ctxList.push(cx);
+  textureList.push(new THREE.CanvasTexture(c));
+}
 
 // ============================
-// プレイヤー（ペイント可能）
+// プレイヤー（6面ペイント可能）
 // ============================
+const playerMaterials = textureList.map(tex => {
+  return new THREE.MeshStandardMaterial({ map: tex });
+});
+
 const playerVisual = new THREE.Mesh(
   new THREE.BoxGeometry(1.5, 1.5, 3),
-  new THREE.MeshStandardMaterial({ map: texture })
+  playerMaterials
 );
 scene.add(playerVisual);
 
@@ -174,20 +178,32 @@ if (isHost) {
 playerVisual.position.copy(playerHitbox.position);
 
 // ============================
-// 相手プレイヤー（ペイント可能）
+// 相手プレイヤー（6面ペイント可能）
 // ============================
-const oppCanvas = document.createElement("canvas");
-oppCanvas.width = 512;
-oppCanvas.height = 512;
-const oppCtx = oppCanvas.getContext("2d");
-oppCtx.fillStyle = "#ffffff";
-oppCtx.fillRect(0, 0, oppCanvas.width, oppCanvas.height);
+const oppCanvasList = [];
+const oppCtxList = [];
+const oppTextureList = [];
 
-const oppTexture = new THREE.CanvasTexture(oppCanvas);
+for (let i = 0; i < 6; i++) {
+  const c = document.createElement("canvas");
+  c.width = 512;
+  c.height = 512;
+  const cx = c.getContext("2d");
+  cx.fillStyle = "#ffffff";
+  cx.fillRect(0, 0, c.width, c.height);
+
+  oppCanvasList.push(c);
+  oppCtxList.push(cx);
+  oppTextureList.push(new THREE.CanvasTexture(c));
+}
+
+const oppMaterials = oppTextureList.map(tex => {
+  return new THREE.MeshStandardMaterial({ map: tex });
+});
 
 const oppVisual = new THREE.Mesh(
   new THREE.BoxGeometry(1.5, 1.5, 3),
-  new THREE.MeshStandardMaterial({ map: oppTexture })
+  oppMaterials
 );
 scene.add(oppVisual);
 
@@ -241,7 +257,7 @@ window.addEventListener("mouseup", () => {
 });
 
 // ============================
-// ペイント処理
+// ペイント処理（面ごと）
 // ============================
 function paintAtMouse(e) {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
@@ -252,22 +268,29 @@ function paintAtMouse(e) {
   const hits = raycaster.intersectObject(playerVisual);
   if (hits.length > 0) {
     const uv = hits[0].uv;
+    const face = hits[0].faceIndex;
 
-    const x = uv.x * canvas.width;
-    const y = (1 - uv.y) * canvas.height;
+    // BoxGeometry の面番号 → materialIndex
+    const materialIndex = Math.floor(face / 2);
+
+    const x = uv.x * canvasList[materialIndex].width;
+    const y = (1 - uv.y) * canvasList[materialIndex].height;
 
     const color = document.getElementById("colorPicker").value;
     const brush = parseInt(document.getElementById("brushSize").value);
 
+    const ctx = ctxList[materialIndex];
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(x, y, brush, 0, Math.PI * 2);
     ctx.fill();
 
-    texture.needsUpdate = true;
+    textureList[materialIndex].needsUpdate = true;
 
+    // ---- オンライン同期 ----
     sendState({
       type: "paintDot",
+      face: materialIndex,
       x, y, color, brush
     });
   }
@@ -279,11 +302,12 @@ function paintAtMouse(e) {
 function handleRemoteMessage(msg) {
 
   if (msg.type === "paintDot") {
-    oppCtx.fillStyle = msg.color;
-    oppCtx.beginPath();
-    oppCtx.arc(msg.x, msg.y, msg.brush, 0, Math.PI * 2);
-    oppCtx.fill();
-    oppTexture.needsUpdate = true;
+    const ctx = oppCtxList[msg.face];
+    ctx.fillStyle = msg.color;
+    ctx.beginPath();
+    ctx.arc(msg.x, msg.y, msg.brush, 0, Math.PI * 2);
+    ctx.fill();
+    oppTextureList[msg.face].needsUpdate = true;
   }
 
   if (msg.type === "state") {
