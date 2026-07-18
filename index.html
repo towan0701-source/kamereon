@@ -144,7 +144,6 @@ light.position.set(20, 50, 20);
 scene.add(light);
 
 // 床
-const obstacles = [];
 const floor = new THREE.Mesh(
   new THREE.BoxGeometry(200, 1, 200),
   new THREE.MeshStandardMaterial({ color: 0x666666 })
@@ -152,21 +151,19 @@ const floor = new THREE.Mesh(
 floor.position.set(0, -0.5, 0);
 scene.add(floor);
 
-// TPSカメラ距離（Aを選んだ設定）
+// TPSカメラ距離（A）
 const TPS_DISTANCE = 15;
 const TPS_HEIGHT = 8;
 
-// フラグ
+// 視点用 yaw/pitch
+let yaw = 0;
+let pitch = 0;
+
 let isPaintingMode = false;
 let pointerLocked = false;
 
-// 視点用 yaw/pitch
-let yaw = 0;    // 横回転（ホスト・ゲスト共通）
-let pitch = 0;  // 縦回転（ゲストのみ）
-
 const mouseLookSensitivity = 0.002;
 
-// Pointer Lock状態監視
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = (document.pointerLockElement === document.body);
 });
@@ -227,44 +224,34 @@ const oppHitbox = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0x00ff00, transparent:true, opacity:0.3 })
 );
 scene.add(oppHitbox);
-// Raycaster
-const raycaster = new THREE.Raycaster();
-const mouse = new THREE.Vector2();
-let painting = false;
-
 // クリック処理
 window.addEventListener("mousedown", e => {
   if (isHost) {
-    // ホスト：ペイントモード中だけ左クリックでペイント
+    if (!pointerLocked && !isPaintingMode && e.button === 0) {
+      document.body.requestPointerLock();
+    }
     if (isPaintingMode && e.button === 0) {
       painting = true;
       paintAtMouse(e);
     }
-    // ホストのPointer Lock取得は最初のクリックで
-    if (!pointerLocked && !isPaintingMode && e.button === 0) {
-      document.body.requestPointerLock();
-    }
     return;
   }
 
-  // ゲスト（FPS）
+  // ゲスト
   if (!pointerLocked && e.button === 0) {
     document.body.requestPointerLock();
     return;
   }
-
   if (pointerLocked && e.button === 0) {
     shootLaser();
   }
 });
 
-// マウス移動（視点回転＋ペイント）
+// マウス移動
 window.addEventListener("mousemove", e => {
   if (pointerLocked && !isPaintingMode) {
-    // 横回転（ホスト・ゲスト共通）
     yaw -= e.movementX * mouseLookSensitivity;
 
-    // 縦回転（ゲストのみ）
     if (!isHost) {
       pitch -= e.movementY * mouseLookSensitivity;
       pitch = Math.max(-1.2, Math.min(1.2, pitch));
@@ -278,65 +265,13 @@ window.addEventListener("mousemove", e => {
 
 window.addEventListener("mouseup", () => painting = false);
 
-// ペイント処理
-function paintAtMouse(e) {
-  mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-  mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-  raycaster.setFromCamera(mouse, camera);
-  const hits = raycaster.intersectObject(myVisual);
-  if (!hits.length) return;
-  const uv = hits[0].uv;
-  const face = hits[0].faceIndex;
-  const materialIndex = Math.floor(face / 2);
-  const x = uv.x * myCanvasList[materialIndex].width;
-  const y = (1 - uv.y) * myCanvasList[materialIndex].height;
-  const color = document.getElementById("colorPicker").value;
-  const brush = parseInt(document.getElementById("brushSize").value);
-  const ctx = myCtxList[materialIndex];
-  ctx.fillStyle = color;
-  ctx.beginPath();
-  ctx.arc(x, y, brush, 0, Math.PI * 2);
-  ctx.fill();
-  myTextureList[materialIndex].needsUpdate = true;
-  sendState({ type:"paintDot", face:materialIndex, x,y,color,brush });
-}
-
-// レーザー（ゲスト）
-function shootLaser() {
-  if (isHost) return;
-  const origin = camera.position.clone();
-  const dir = new THREE.Vector3();
-  camera.getWorldDirection(dir);
-  raycaster.set(origin, dir);
-  const hits = raycaster.intersectObject(oppHitbox);
-  const hitHost = hits.length > 0;
-
-  const laserMat = new THREE.LineBasicMaterial({ color:0xff0000 });
-  const laserGeo = new THREE.BufferGeometry().setFromPoints([
-    origin,
-    origin.clone().add(dir.multiplyScalar(50))
-  ]);
-  const laser = new THREE.Line(laserGeo, laserMat);
-  scene.add(laser);
-  setTimeout(() => scene.remove(laser), 200);
-
-  if (hitHost) {
-    sendState({ type:"win" });
-    resultBox.innerText = "🎉 勝ちました！";
-    resultBox.style.display = "block";
-  }
-}
-
 // キー入力
 const keys = {};
 window.addEventListener("keydown", e => {
-  const k = e.key.toLowerCase();
-  keys[k] = true;
+  keys[e.key.toLowerCase()] = true;
 
-  // ホストのFキーでペイントモード切替
-  if (isHost && k === "f") {
+  if (isHost && e.key.toLowerCase() === "f") {
     isPaintingMode = !isPaintingMode;
-
     if (isPaintingMode) {
       if (pointerLocked) document.exitPointerLock();
     } else {
@@ -344,10 +279,9 @@ window.addEventListener("keydown", e => {
     }
   }
 });
+window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
 
-window.addEventListener("keyup",   e => keys[e.key.toLowerCase()] = false);
-
-// 移動（TPS/FPS共通・ゲストの反転修正込み）
+// 移動（ゲスト反転）
 let vy = 0;
 const speed = 0.3;
 const gravity = -0.02;
@@ -356,12 +290,18 @@ let onGround = true;
 function updatePlayer() {
   let moveForward = 0;
   let moveSide = 0;
+
   if (keys["w"]) moveForward =  speed;
   if (keys["s"]) moveForward = -speed;
   if (keys["a"]) moveSide    = -speed;
   if (keys["d"]) moveSide    =  speed;
 
-  // yawから前方向ベクトルを計算（FPSでもTPSでも同じ）
+  // ⭐ ゲストだけ移動反転
+  if (!isHost) {
+    moveForward = -moveForward;
+    moveSide    = -moveSide;
+  }
+
   const dirX = Math.sin(yaw);
   const dirZ = Math.cos(yaw);
 
@@ -369,7 +309,7 @@ function updatePlayer() {
   myHitbox.position.x += dirX * moveForward;
   myHitbox.position.z += dirZ * moveForward;
 
-  // 左右（左は前方向を90度回転）
+  // 左右
   myHitbox.position.x += -dirZ * moveSide;
   myHitbox.position.z +=  dirX * moveSide;
 
@@ -388,7 +328,6 @@ function updatePlayer() {
 
   myVisual.position.copy(myHitbox.position);
 
-  // 自分の位置だけ送る（ホストとゲストでtypeを分ける）
   sendState({
     type: isHost ? "hostMove" : "guestMove",
     x: myHitbox.position.x,
@@ -399,12 +338,10 @@ function updatePlayer() {
 
 function handleRemoteMessage(msg) {
   if (msg.type === "hostMove" && !isHost) {
-    // ゲスト側：ホストの位置を相手キャラに反映
     oppHitbox.position.set(msg.x, msg.y, msg.z);
     oppVisual.position.copy(oppHitbox.position);
   }
   if (msg.type === "guestMove" && isHost) {
-    // ホスト側：ゲストの位置を相手キャラに反映
     oppHitbox.position.set(msg.x, msg.y, msg.z);
     oppVisual.position.copy(oppHitbox.position);
   }
@@ -421,10 +358,9 @@ function handleRemoteMessage(msg) {
     resultBox.style.display = "block";
   }
 }
-// TPS/FPS カメラ
 function updateCamera() {
   if (isHost) {
-    // ホスト：TPS視点（後ろから見下ろし）
+    // ⭐ ホスト：TPS視点（真後ろ固定）
     const offsetX = Math.sin(yaw) * TPS_DISTANCE;
     const offsetZ = Math.cos(yaw) * TPS_DISTANCE;
 
@@ -434,7 +370,6 @@ function updateCamera() {
       myHitbox.position.z - offsetZ
     );
 
-    // カメレオンの方向を向く
     const dx = myHitbox.position.x - camera.position.x;
     const dz = myHitbox.position.z - camera.position.z;
     const angle = Math.atan2(dx, dz);
@@ -442,7 +377,7 @@ function updateCamera() {
     camera.rotation.set(0, angle, 0);
 
   } else {
-    // ゲスト：FPS視点（頭の位置＋上下左右回転）
+    // ⭐ ゲスト：FPS視点（上下左右）
     const headHeight = 3;
 
     camera.position.set(
