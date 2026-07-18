@@ -15,7 +15,7 @@
       position:fixed; top:10px; right:10px;
       background:#222; padding:10px; border-radius:8px;
       width:150px;
-      display:none; /* ゲストは非表示 */
+      display:none;
     }
 
     #paintUI input {
@@ -25,14 +25,12 @@
 </head>
 <body>
 
-<!-- 招待URL -->
 <div id="invite" style="display:none;">
   <div>👇 このURLを友達に送ってね！</div>
   <div id="inviteURL" style="word-break:break-all; margin-top:5px;"></div>
   <button onclick="copyInvite()">コピー</button>
 </div>
 
-<!-- 🎨 ペイントUI（ホストのみ） -->
 <div id="paintUI">
   <div>🎨 ペイントカラー</div>
   <input type="color" id="colorPicker" value="#5599ff">
@@ -45,9 +43,6 @@
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 
-// ============================
-// PeerJS 接続
-// ============================
 let peer = null;
 let conn = null;
 let isHost = false;
@@ -72,8 +67,7 @@ if (!roomId) {
     const url = `${location.origin}${location.pathname}?room=${id}`;
     inviteURL.innerText = url;
     inviteBox.style.display = "block";
-
-    paintUI.style.display = "block"; // ホストだけ表示
+    paintUI.style.display = "block";
   });
 
   peer.on("connection", c => {
@@ -89,8 +83,7 @@ if (!roomId) {
   peer.on("open", () => {
     conn = peer.connect(roomId);
     setupConnection();
-
-    paintUI.style.display = "none"; // ゲストは非表示
+    paintUI.style.display = "none";
   });
 }
 
@@ -106,7 +99,7 @@ function sendState(msg) {
 // Three.js 基本セット
 // ============================
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x111111);
+scene.background = new THREE.Color(0x222222);
 
 const camera = new THREE.PerspectiveCamera(
   75, window.innerWidth / window.innerHeight, 0.1, 2000
@@ -117,7 +110,20 @@ const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-const light = new THREE.DirectionalLight(0xffffff, 1);
+// ============================
+// 💡 明るくするライト追加
+// ============================
+
+// 環境光（全体を明るく）
+const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+scene.add(ambient);
+
+// 空と地面の光
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.8);
+scene.add(hemi);
+
+// 太陽光
+const light = new THREE.DirectionalLight(0xffffff, 1.5);
 light.position.set(20, 50, 20);
 scene.add(light);
 
@@ -128,7 +134,7 @@ const obstacles = [];
 
 const floor = new THREE.Mesh(
   new THREE.BoxGeometry(200, 1, 200),
-  new THREE.MeshStandardMaterial({ color: 0x444444 })
+  new THREE.MeshStandardMaterial({ color: 0x666666 })
 );
 floor.position.set(0, -0.5, 0);
 scene.add(floor);
@@ -197,7 +203,7 @@ scene.add(oppHitbox);
 function addWall(x, y, z, rotY) {
   const wall = new THREE.Mesh(
     new THREE.BoxGeometry(200, 40, 2),
-    new THREE.MeshStandardMaterial({ color: 0x666666 })
+    new THREE.MeshStandardMaterial({ color: 0x888888 })
   );
   wall.position.set(x, y, z);
   wall.rotation.y = rotY;
@@ -260,7 +266,6 @@ function paintAtMouse(e) {
 
     texture.needsUpdate = true;
 
-    // ---- オンライン同期 ----
     sendState({
       type: "paintDot",
       x, y, color, brush
@@ -288,7 +293,7 @@ function handleRemoteMessage(msg) {
 }
 
 // ============================
-// AABB当たり判定（あなたのコードそのまま）
+// 当たり判定
 // ============================
 function isColliding(a, b) {
   a.geometry.computeBoundingBox();
@@ -307,7 +312,7 @@ function isColliding(a, b) {
 }
 
 // ============================
-// プレイヤー移動（あなたのコードそのまま）
+// プレイヤー移動
 // ============================
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
