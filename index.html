@@ -159,7 +159,7 @@ window.addEventListener("wheel", e => {
   zoomDistance = Math.max(5, Math.min(40, zoomDistance));
 });
 
-// ⭐ 新フラグ：ペイントモード＆Pointer Lock
+// ⭐ 新フラグ
 let isPaintingMode = false;      // ホスト専用ペイントモード
 let pointerLocked = false;       // Pointer Lock状態
 const mouseLookSensitivity = 0.002;
@@ -230,51 +230,46 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let painting = false;
 
-// ペイント（ホストのみ・ペイントモード中だけ）
+// ⭐ クリック処理（Pointer Lockの再取得を禁止）
 window.addEventListener("mousedown", e => {
   if (isHost) {
-    // ペイントモード中：視点操作OFF＆Pointer Lock解除済み
+    // ペイントモード中：ペイントのみ
     if (isPaintingMode && e.button === 0) {
       painting = true;
       paintAtMouse(e);
       return;
     }
-    // ペイントモードでないとき：Pointer Lock取得用クリック
-    if (!isPaintingMode && !pointerLocked && e.button === 0) {
-      document.body.requestPointerLock();
-      return;
-    }
-  } else {
-    // ゲスト：FPS視点＋レーザー
-    if (!pointerLocked && e.button === 0) {
-      // まずPointer Lockを取得
-      document.body.requestPointerLock();
-      return;
-    }
-    if (pointerLocked && e.button === 0) {
-      // ロック中の左クリックでレーザー
-      shootLaser();
-      return;
-    }
-  }
-});
-
-window.addEventListener("mousemove", e => {
-  // ペイント中（ホスト）ならペイント処理
-  if (painting && isHost && isPaintingMode) {
-    paintAtMouse(e);
+    // ペイントモード外：クリックではPointer Lockを再取得しない
     return;
   }
 
-  // Pointer Lock中は視点回転（ホスト・ゲスト共通）
+  // ⭐ ゲスト（FPS）
+  if (!pointerLocked) {
+    // 最初の1回だけロック
+    document.body.requestPointerLock();
+    return;
+  }
+
+  // ロック中の左クリックはレーザー
+  if (e.button === 0) shootLaser();
+});
+
+// ⭐ マウス移動（視点回転＋ペイント）
+window.addEventListener("mousemove", e => {
+  // Pointer Lock中の視点回転（ホスト・ゲスト共通）
   if (pointerLocked && !isPaintingMode) {
     camera.rotation.y -= e.movementX * mouseLookSensitivity;
-    // 必要なら上下視点も追加できるが、今回は水平回転のみ
+  }
+
+  // ペイント中（ホスト）
+  if (painting && isHost && isPaintingMode) {
+    paintAtMouse(e);
   }
 });
 
 window.addEventListener("mouseup", () => painting = false);
 
+// ペイント処理
 function paintAtMouse(e) {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -332,30 +327,26 @@ window.addEventListener("keydown", e => {
   // ⭐ ホストのFキーでペイントモード切替
   if (isHost && k === "f") {
     isPaintingMode = !isPaintingMode;
+
     if (isPaintingMode) {
-      // ペイントモードON：Pointer Lock解除＋UI表示
+      // ペイントモードON → Pointer Lock解除
       if (pointerLocked) document.exitPointerLock();
-      paintUI.style.display = "block";
     } else {
-      // ペイントモードOFF：Pointer Lock再取得（任意）
+      // ペイントモードOFF → Pointer Lock再取得
       document.body.requestPointerLock();
-      paintUI.style.display = "block"; // ホストは常にUI表示でOK
     }
   }
 });
 
 window.addEventListener("keyup",   e => keys[e.key.toLowerCase()] = false);
 
+// TPS移動
 let vy = 0;
 const speed = 0.3;
 const gravity = -0.02;
 let onGround = true;
 
 function updatePlayer() {
-  const oldX = myHitbox.position.x;
-  const oldY = myHitbox.position.y;
-  const oldZ = myHitbox.position.z;
-
   let moveX = 0;
   let moveZ = 0;
   if (keys["w"]) moveZ =  speed;
@@ -371,10 +362,6 @@ function updatePlayer() {
   myHitbox.position.z += moveZ * cos;
   myHitbox.position.x -= moveX * cos;
   myHitbox.position.z += moveX * sin;
-
-  for (const obs of obstacles) {
-    if (false) { /* 壁判定は必要なら追加 */ }
-  }
 
   if (keys["arrowup"] && onGround) {
     vy = 0.35;
