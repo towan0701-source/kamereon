@@ -179,11 +179,11 @@ window.addEventListener("wheel", e => {
   zoomDistance = Math.max(zoomMin, Math.min(zoomMax, zoomDistance));
 });
 // ============================
-// 🎨 6面ペイント用 CanvasTexture
+// 🎨 自分自身の6面ペイント
 // ============================
-const canvasList = [];
-const ctxList = [];
-const textureList = [];
+const myCanvasList = [];
+const myCtxList = [];
+const myTextureList = [];
 
 for (let i = 0; i < 6; i++) {
   const c = document.createElement("canvas");
@@ -193,39 +193,37 @@ for (let i = 0; i < 6; i++) {
   cx.fillStyle = "#ffffff";
   cx.fillRect(0, 0, c.width, c.height);
 
-  canvasList.push(c);
-  ctxList.push(cx);
-  textureList.push(new THREE.CanvasTexture(c));
+  myCanvasList.push(c);
+  myCtxList.push(cx);
+  myTextureList.push(new THREE.CanvasTexture(c));
 }
 
-// ============================
-// プレイヤー（ホスト）
-// ============================
-const playerMaterials = textureList.map(tex => {
+const myMaterials = myTextureList.map(tex => {
   return new THREE.MeshStandardMaterial({ map: tex });
 });
 
-const playerVisual = new THREE.Mesh(
+const myVisual = new THREE.Mesh(
   new THREE.BoxGeometry(1.5, 1.5, 3),
-  playerMaterials
+  myMaterials
 );
-scene.add(playerVisual);
+scene.add(myVisual);
 
-const playerHitbox = new THREE.Mesh(
+const myHitbox = new THREE.Mesh(
   new THREE.BoxGeometry(0.6, 0.6, 0.6),
   new THREE.MeshStandardMaterial({ color: 0xff0000, transparent:true, opacity:0.3 })
 );
-scene.add(playerHitbox);
+scene.add(myHitbox);
 
+// ⭐ 自分の初期位置
 if (isHost) {
-  playerHitbox.position.set(0, 2, 0);
+  myHitbox.position.set(0, 2, 0);
 } else {
-  playerHitbox.position.set(20, 2, 20);
+  myHitbox.position.set(20, 2, 20);
 }
-playerVisual.position.copy(playerHitbox.position);
+myVisual.position.copy(myHitbox.position);
 
 // ============================
-// 相手プレイヤー（ゲスト）
+// 🎨 相手プレイヤーの6面ペイント
 // ============================
 const oppCanvasList = [];
 const oppCtxList = [];
@@ -291,25 +289,25 @@ function paintAtMouse(e) {
 
   raycaster.setFromCamera(mouse, camera);
 
-  const hits = raycaster.intersectObject(playerVisual);
+  const hits = raycaster.intersectObject(myVisual);
   if (hits.length > 0) {
     const uv = hits[0].uv;
     const face = hits[0].faceIndex;
     const materialIndex = Math.floor(face / 2);
 
-    const x = uv.x * canvasList[materialIndex].width;
-    const y = (1 - uv.y) * canvasList[materialIndex].height;
+    const x = uv.x * myCanvasList[materialIndex].width;
+    const y = (1 - uv.y) * myCanvasList[materialIndex].height;
 
     const color = document.getElementById("colorPicker").value;
     const brush = parseInt(document.getElementById("brushSize").value);
 
-    const ctx = ctxList[materialIndex];
+    const ctx = myCtxList[materialIndex];
     ctx.fillStyle = color;
     ctx.beginPath();
     ctx.arc(x, y, brush, 0, Math.PI * 2);
     ctx.fill();
 
-    textureList[materialIndex].needsUpdate = true;
+    myTextureList[materialIndex].needsUpdate = true;
 
     sendState({
       type: "paintDot",
@@ -331,7 +329,7 @@ function shootLaser() {
 
   raycaster.set(origin, direction);
 
-  const hits = raycaster.intersectObject(playerHitbox);
+  const hits = raycaster.intersectObject(oppHitbox);
   const hitHost = hits.length > 0;
 
   const laserMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
@@ -356,7 +354,7 @@ window.addEventListener("mousedown", e => {
 });
 
 // ============================
-// ⭐ 元の TPS 移動コード（カメラ角度依存）
+// ⭐ 元の TPS 移動コード（自分自身だけ動かす）
 // ============================
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
@@ -369,12 +367,9 @@ let onGround = true;
 
 function updatePlayer() {
 
-  // ⭐ ホストとゲストで動かす対象を分ける
-  const target = isHost ? playerHitbox : oppHitbox;
-
-  const oldX = target.position.x;
-  const oldY = target.position.y;
-  const oldZ = target.position.z;
+  const oldX = myHitbox.position.x;
+  const oldY = myHitbox.position.y;
+  const oldZ = myHitbox.position.z;
 
   let moveX = 0;
   let moveZ = 0;
@@ -384,22 +379,21 @@ function updatePlayer() {
   if (keys["a"]) moveX = -speed;
   if (keys["d"]) moveX =  speed;
 
-  // ⭐ カメラ角度で移動方向を決める（元の方式）
   const angle = camera.rotation.y;
   const sin = Math.sin(angle);
   const cos = Math.cos(angle);
 
-  target.position.x += moveZ * sin;
-  target.position.z += moveZ * cos;
+  myHitbox.position.x += moveZ * sin;
+  myHitbox.position.z += moveZ * cos;
 
-  target.position.x -= moveX * cos;
-  target.position.z += moveX * sin;
+  myHitbox.position.x -= moveX * cos;
+  myHitbox.position.z += moveX * sin;
 
   // 壁との当たり判定
   for (const obs of obstacles) {
-    if (isColliding(target, obs)) {
-      target.position.x = oldX;
-      target.position.z = oldZ;
+    if (isColliding(myHitbox, obs)) {
+      myHitbox.position.x = oldX;
+      myHitbox.position.z = oldZ;
       break;
     }
   }
@@ -411,41 +405,36 @@ function updatePlayer() {
   }
 
   vy += gravity;
-  target.position.y += vy;
+  myHitbox.position.y += vy;
 
-  if (target.position.y <= 2) {
-    target.position.y = 2;
+  if (myHitbox.position.y <= 2) {
+    myHitbox.position.y = 2;
     vy = 0;
     onGround = true;
   }
 
-  // 見た目を同期
-  if (isHost) {
-    playerVisual.position.copy(playerHitbox.position);
-  } else {
-    oppVisual.position.copy(oppHitbox.position);
-  }
+  myVisual.position.copy(myHitbox.position);
 
-  // ⭐ 位置を送る（ホストもゲストも送る）
+  // ⭐ 自分の位置を送る
   sendState({
     type: isHost ? "hostMove" : "guestMove",
-    x: target.position.x,
-    y: target.position.y,
-    z: target.position.z
+    x: myHitbox.position.x,
+    y: myHitbox.position.y,
+    z: myHitbox.position.z
   });
 }
 
 // ============================
-// ⭐ 受信処理（同期修正版）
+// ⭐ 相手の位置を受け取る
 // ============================
 function handleRemoteMessage(msg) {
 
-  if (msg.type === "hostMove") {
-    playerHitbox.position.set(msg.x, msg.y, msg.z);
-    playerVisual.position.copy(playerHitbox.position);
+  if (msg.type === "hostMove" && !isHost) {
+    oppHitbox.position.set(msg.x, msg.y, msg.z);
+    oppVisual.position.copy(oppHitbox.position);
   }
 
-  if (msg.type === "guestMove") {
+  if (msg.type === "guestMove" && isHost) {
     oppHitbox.position.set(msg.x, msg.y, msg.z);
     oppVisual.position.copy(oppHitbox.position);
   }
@@ -464,28 +453,21 @@ function handleRemoteMessage(msg) {
     resultBox.style.display = "block";
   }
 }
-// ============================
-// ⭐ TPSカメラ（元の方式）
-// ============================
 function updateCamera() {
   const height = 8;
 
-  // ⭐ カメラ角度は維持する（プレイヤーを向けない）
   const angle = camera.rotation.y;
 
   const offsetX = Math.sin(angle) * zoomDistance;
   const offsetZ = Math.cos(angle) * zoomDistance;
 
-  camera.position.x = playerHitbox.position.x - offsetX;
-  camera.position.y = playerHitbox.position.y + height;
-  camera.position.z = playerHitbox.position.z - offsetZ;
+  camera.position.x = myHitbox.position.x - offsetX;
+  camera.position.y = myHitbox.position.y + height;
+  camera.position.z = myHitbox.position.z - offsetZ;
 
-  camera.lookAt(playerHitbox.position);
+  camera.lookAt(myHitbox.position);
 }
 
-// ============================
-// 描画ループ
-// ============================
 function animate() {
   requestAnimationFrame(animate);
 
@@ -496,15 +478,8 @@ function animate() {
 }
 animate();
 
-// ============================
-// リサイズ
-// ============================
 window.addEventListener("resize", () => {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
-
-</script>
-</body>
-</html>
