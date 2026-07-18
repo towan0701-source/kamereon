@@ -17,6 +17,10 @@
       width:150px;
       display:none; /* ゲストは非表示 */
     }
+
+    #paintUI input {
+      width:100%;
+    }
   </style>
 </head>
 <body>
@@ -28,10 +32,13 @@
   <button onclick="copyInvite()">コピー</button>
 </div>
 
-<!-- 🎨 カラーパレット（ホストのみ） -->
+<!-- 🎨 ペイントUI（ホストのみ） -->
 <div id="paintUI">
   <div>🎨 ペイントカラー</div>
   <input type="color" id="colorPicker" value="#5599ff">
+
+  <div style="margin-top:10px;">🖌 ブラシサイズ</div>
+  <input type="range" id="brushSize" min="5" max="50" value="10">
 </div>
 
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
@@ -58,7 +65,6 @@ function copyInvite() {
 }
 
 if (!roomId) {
-  // ---- ホスト側 ----
   isHost = true;
   peer = new Peer();
 
@@ -67,8 +73,7 @@ if (!roomId) {
     inviteURL.innerText = url;
     inviteBox.style.display = "block";
 
-    // ホストはカラーパレットを表示
-    paintUI.style.display = "block";
+    paintUI.style.display = "block"; // ホストだけ表示
   });
 
   peer.on("connection", c => {
@@ -78,7 +83,6 @@ if (!roomId) {
   });
 
 } else {
-  // ---- ゲスト側 ----
   isHost = false;
   peer = new Peer();
 
@@ -86,8 +90,7 @@ if (!roomId) {
     conn = peer.connect(roomId);
     setupConnection();
 
-    // ゲストはカラーパレット非表示
-    paintUI.style.display = "none";
+    paintUI.style.display = "none"; // ゲストは非表示
   });
 }
 
@@ -130,21 +133,20 @@ const floor = new THREE.Mesh(
 floor.position.set(0, -0.5, 0);
 scene.add(floor);
 // ============================
-// 🎨 ペイント用 Canvas テクスチャ
+// 🎨 ペイント用 Canvas
 // ============================
 const canvas = document.createElement("canvas");
 canvas.width = 512;
 canvas.height = 512;
 const ctx = canvas.getContext("2d");
 
-// 初期は白いキャンバス
 ctx.fillStyle = "#ffffff";
 ctx.fillRect(0, 0, canvas.width, canvas.height);
 
 const texture = new THREE.CanvasTexture(canvas);
 
 // ============================
-// プレイヤー（青い箱 → ペイント可能）
+// プレイヤー（ペイント可能）
 // ============================
 const playerVisual = new THREE.Mesh(
   new THREE.BoxGeometry(1.5, 1.5, 3),
@@ -158,7 +160,6 @@ const playerHitbox = new THREE.Mesh(
 );
 scene.add(playerHitbox);
 
-// ---- 初期リスポーン地点 ----
 if (isHost) {
   playerHitbox.position.set(0, 2, 0);
 } else {
@@ -191,7 +192,7 @@ const oppHitbox = new THREE.Mesh(
 scene.add(oppHitbox);
 
 // ============================
-// 家具・障害物（省略せずそのまま）
+// 障害物（あなたのコードそのまま）
 // ============================
 function addWall(x, y, z, rotY) {
   const wall = new THREE.Mesh(
@@ -209,16 +210,34 @@ addWall(0, 20.5, 100, 0);
 addWall(-100, 20.5, 0, Math.PI/2);
 addWall(100, 20.5, 0, Math.PI/2);
 
-// 車・イス・机・ブロックもあなたのコードそのまま
+// 車・イス・机・ブロックもそのまま
 // ============================
 // Raycaster（クリック判定）
 // ============================
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 
-window.addEventListener("mousedown", e => {
-  if (!isHost) return; // ゲストはペイント不可
+let painting = false;
 
+window.addEventListener("mousedown", e => {
+  if (!isHost) return;
+  painting = true;
+  paintAtMouse(e);
+});
+
+window.addEventListener("mousemove", e => {
+  if (!painting || !isHost) return;
+  paintAtMouse(e);
+});
+
+window.addEventListener("mouseup", () => {
+  painting = false;
+});
+
+// ============================
+// ペイント処理
+// ============================
+function paintAtMouse(e) {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
 
@@ -228,27 +247,26 @@ window.addEventListener("mousedown", e => {
   if (hits.length > 0) {
     const uv = hits[0].uv;
 
-    // UV座標 → Canvas座標
     const x = uv.x * canvas.width;
     const y = (1 - uv.y) * canvas.height;
 
     const color = document.getElementById("colorPicker").value;
+    const brush = parseInt(document.getElementById("brushSize").value);
 
-    // 点を描く
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.arc(x, y, 10, 0, Math.PI * 2);
+    ctx.arc(x, y, brush, 0, Math.PI * 2);
     ctx.fill();
 
     texture.needsUpdate = true;
 
-    // ---- オンライン同期（描いた点だけ送る） ----
+    // ---- オンライン同期 ----
     sendState({
       type: "paintDot",
-      x, y, color
+      x, y, color, brush
     });
   }
-});
+}
 
 // ============================
 // ゲスト側：受信した点を描く
@@ -258,7 +276,7 @@ function handleRemoteMessage(msg) {
   if (msg.type === "paintDot") {
     oppCtx.fillStyle = msg.color;
     oppCtx.beginPath();
-    oppCtx.arc(msg.x, msg.y, 10, 0, Math.PI * 2);
+    oppCtx.arc(msg.x, msg.y, msg.brush, 0, Math.PI * 2);
     oppCtx.fill();
     oppTexture.needsUpdate = true;
   }
