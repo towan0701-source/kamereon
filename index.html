@@ -20,7 +20,6 @@
 
     #paintUI input { width:100%; }
 
-    /* 🎯 ゲスト用照準 */
     #crosshair {
       position:fixed;
       top:50%;
@@ -73,7 +72,6 @@
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
-
 let peer = null;
 let conn = null;
 let isHost = false;
@@ -95,28 +93,23 @@ function copyInvite() {
 if (!roomId) {
   isHost = true;
   peer = new Peer();
-
   peer.on("open", id => {
     const url = `${location.origin}${location.pathname}?room=${id}`;
     inviteURL.innerText = url;
     inviteBox.style.display = "block";
     paintUI.style.display = "block";
   });
-
   peer.on("connection", c => {
     conn = c;
     setupConnection();
     inviteBox.style.display = "none";
   });
-
 } else {
   isHost = false;
   peer = new Peer();
-
   peer.on("open", () => {
     conn = peer.connect(roomId);
     setupConnection();
-
     crosshair.style.display = "block";
     paintUI.style.display = "none";
   });
@@ -125,14 +118,11 @@ if (!roomId) {
 function setupConnection() {
   conn.on("data", msg => handleRemoteMessage(msg));
 }
-
 function sendState(msg) {
   if (conn && conn.open) conn.send(msg);
 }
 
-// ============================
 // Three.js 基本セット
-// ============================
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x222222);
 
@@ -145,21 +135,15 @@ const renderer = new THREE.WebGLRenderer({ antialias:true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// ============================
-// 💡 明るくするライト
-// ============================
+// ライト
 scene.add(new THREE.AmbientLight(0xffffff, 0.7));
 scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.8));
-
 const light = new THREE.DirectionalLight(0xffffff, 1.5);
 light.position.set(20, 50, 20);
 scene.add(light);
 
-// ============================
 // 床
-// ============================
 const obstacles = [];
-
 const floor = new THREE.Mesh(
   new THREE.BoxGeometry(200, 1, 200),
   new THREE.MeshStandardMaterial({ color: 0x666666 })
@@ -167,24 +151,16 @@ const floor = new THREE.Mesh(
 floor.position.set(0, -0.5, 0);
 scene.add(floor);
 
-// ============================
-// 🔍 ズーム
-// ============================
+// ズーム
 let zoomDistance = 15;
-let zoomMin = 5;
-let zoomMax = 40;
-
 window.addEventListener("wheel", e => {
   zoomDistance += e.deltaY * 0.02;
-  zoomDistance = Math.max(zoomMin, Math.min(zoomMax, zoomDistance));
+  zoomDistance = Math.max(5, Math.min(40, zoomDistance));
 });
-// ============================
-// 🎨 自分自身の6面ペイント
-// ============================
+// 自分の6面ペイント
 const myCanvasList = [];
 const myCtxList = [];
 const myTextureList = [];
-
 for (let i = 0; i < 6; i++) {
   const c = document.createElement("canvas");
   c.width = 512;
@@ -192,20 +168,12 @@ for (let i = 0; i < 6; i++) {
   const cx = c.getContext("2d");
   cx.fillStyle = "#ffffff";
   cx.fillRect(0, 0, c.width, c.height);
-
   myCanvasList.push(c);
   myCtxList.push(cx);
   myTextureList.push(new THREE.CanvasTexture(c));
 }
-
-const myMaterials = myTextureList.map(tex => {
-  return new THREE.MeshStandardMaterial({ map: tex });
-});
-
-const myVisual = new THREE.Mesh(
-  new THREE.BoxGeometry(1.5, 1.5, 3),
-  myMaterials
-);
+const myMaterials = myTextureList.map(tex => new THREE.MeshStandardMaterial({ map: tex }));
+const myVisual = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 3), myMaterials);
 scene.add(myVisual);
 
 const myHitbox = new THREE.Mesh(
@@ -214,7 +182,7 @@ const myHitbox = new THREE.Mesh(
 );
 scene.add(myHitbox);
 
-// ⭐ 自分の初期位置
+// 初期位置（元の動いてたやつに近い感じ）
 if (isHost) {
   myHitbox.position.set(0, 2, 0);
 } else {
@@ -222,13 +190,10 @@ if (isHost) {
 }
 myVisual.position.copy(myHitbox.position);
 
-// ============================
-// 🎨 相手プレイヤーの6面ペイント
-// ============================
+// 相手プレイヤー
 const oppCanvasList = [];
 const oppCtxList = [];
 const oppTextureList = [];
-
 for (let i = 0; i < 6; i++) {
   const c = document.createElement("canvas");
   c.width = 512;
@@ -236,20 +201,12 @@ for (let i = 0; i < 6; i++) {
   const cx = c.getContext("2d");
   cx.fillStyle = "#ffffff";
   cx.fillRect(0, 0, c.width, c.height);
-
   oppCanvasList.push(c);
   oppCtxList.push(cx);
   oppTextureList.push(new THREE.CanvasTexture(c));
 }
-
-const oppMaterials = oppTextureList.map(tex => {
-  return new THREE.MeshStandardMaterial({ map: tex });
-});
-
-const oppVisual = new THREE.Mesh(
-  new THREE.BoxGeometry(1.5, 1.5, 3),
-  oppMaterials
-);
+const oppMaterials = oppTextureList.map(tex => new THREE.MeshStandardMaterial({ map: tex }));
+const oppVisual = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 3), oppMaterials);
 scene.add(oppVisual);
 
 const oppHitbox = new THREE.Mesh(
@@ -257,105 +214,75 @@ const oppHitbox = new THREE.Mesh(
   new THREE.MeshStandardMaterial({ color: 0x00ff00, transparent:true, opacity:0.3 })
 );
 scene.add(oppHitbox);
-// ============================
 // Raycaster
-// ============================
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
-
 let painting = false;
 
-// ============================
-// 🎨 ペイント（ホストのみ）
-// ============================
+// ペイント（ホスト）
 window.addEventListener("mousedown", e => {
   if (isHost && e.button === 0) {
     painting = true;
     paintAtMouse(e);
   }
 });
-
 window.addEventListener("mousemove", e => {
   if (painting && isHost) paintAtMouse(e);
 });
-
-window.addEventListener("mouseup", () => {
-  painting = false;
-});
+window.addEventListener("mouseup", () => painting = false);
 
 function paintAtMouse(e) {
   mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
   mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-
   raycaster.setFromCamera(mouse, camera);
-
   const hits = raycaster.intersectObject(myVisual);
-  if (hits.length > 0) {
-    const uv = hits[0].uv;
-    const face = hits[0].faceIndex;
-    const materialIndex = Math.floor(face / 2);
-
-    const x = uv.x * myCanvasList[materialIndex].width;
-    const y = (1 - uv.y) * myCanvasList[materialIndex].height;
-
-    const color = document.getElementById("colorPicker").value;
-    const brush = parseInt(document.getElementById("brushSize").value);
-
-    const ctx = myCtxList[materialIndex];
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(x, y, brush, 0, Math.PI * 2);
-    ctx.fill();
-
-    myTextureList[materialIndex].needsUpdate = true;
-
-    sendState({
-      type: "paintDot",
-      face: materialIndex,
-      x, y, color, brush
-    });
-  }
+  if (!hits.length) return;
+  const uv = hits[0].uv;
+  const face = hits[0].faceIndex;
+  const materialIndex = Math.floor(face / 2);
+  const x = uv.x * myCanvasList[materialIndex].width;
+  const y = (1 - uv.y) * myCanvasList[materialIndex].height;
+  const color = document.getElementById("colorPicker").value;
+  const brush = parseInt(document.getElementById("brushSize").value);
+  const ctx = myCtxList[materialIndex];
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.arc(x, y, brush, 0, Math.PI * 2);
+  ctx.fill();
+  myTextureList[materialIndex].needsUpdate = true;
+  sendState({ type:"paintDot", face:materialIndex, x,y,color,brush });
 }
 
-// ============================
-// 🔫 ゲストのレーザー光線
-// ============================
+// レーザー（ゲスト）
 function shootLaser() {
   if (isHost) return;
-
   const origin = camera.position.clone();
-  const direction = new THREE.Vector3();
-  camera.getWorldDirection(direction);
-
-  raycaster.set(origin, direction);
-
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  raycaster.set(origin, dir);
   const hits = raycaster.intersectObject(oppHitbox);
   const hitHost = hits.length > 0;
 
-  const laserMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
-  const laserGeometry = new THREE.BufferGeometry().setFromPoints([
+  const laserMat = new THREE.LineBasicMaterial({ color:0xff0000 });
+  const laserGeo = new THREE.BufferGeometry().setFromPoints([
     origin,
-    origin.clone().add(direction.multiplyScalar(50))
+    origin.clone().add(dir.multiplyScalar(50))
   ]);
-  const laser = new THREE.Line(laserGeometry, laserMaterial);
+  const laser = new THREE.Line(laserGeo, laserMat);
   scene.add(laser);
-
   setTimeout(() => scene.remove(laser), 200);
 
   if (hitHost) {
-    sendState({ type: "win" });
+    sendState({ type:"win" });
     resultBox.innerText = "🎉 勝ちました！";
     resultBox.style.display = "block";
   }
 }
-
 window.addEventListener("mousedown", e => {
   if (!isHost && e.button === 0) shootLaser();
 });
 
-// ============================
-// ⭐ 元の TPS 移動コード（自分自身だけ動かす）
-// ============================
+// 元のTPS移動（カメラ角度依存）
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
 window.addEventListener("keyup",   e => keys[e.key.toLowerCase()] = false);
@@ -366,14 +293,12 @@ const gravity = -0.02;
 let onGround = true;
 
 function updatePlayer() {
-
   const oldX = myHitbox.position.x;
   const oldY = myHitbox.position.y;
   const oldZ = myHitbox.position.z;
 
   let moveX = 0;
   let moveZ = 0;
-
   if (keys["w"]) moveZ =  speed;
   if (keys["s"]) moveZ = -speed;
   if (keys["a"]) moveX = -speed;
@@ -385,11 +310,9 @@ function updatePlayer() {
 
   myHitbox.position.x += moveZ * sin;
   myHitbox.position.z += moveZ * cos;
-
   myHitbox.position.x -= moveX * cos;
   myHitbox.position.z += moveX * sin;
 
-  // 壁との当たり判定
   for (const obs of obstacles) {
     if (isColliding(myHitbox, obs)) {
       myHitbox.position.x = oldX;
@@ -398,15 +321,12 @@ function updatePlayer() {
     }
   }
 
-  // ジャンプ
   if (keys["arrowup"] && onGround) {
     vy = 0.35;
     onGround = false;
   }
-
   vy += gravity;
   myHitbox.position.y += vy;
-
   if (myHitbox.position.y <= 2) {
     myHitbox.position.y = 2;
     vy = 0;
@@ -415,7 +335,6 @@ function updatePlayer() {
 
   myVisual.position.copy(myHitbox.position);
 
-  // ⭐ 自分の位置を送る
   sendState({
     type: isHost ? "hostMove" : "guestMove",
     x: myHitbox.position.x,
@@ -424,21 +343,15 @@ function updatePlayer() {
   });
 }
 
-// ============================
-// ⭐ 相手の位置を受け取る
-// ============================
 function handleRemoteMessage(msg) {
-
   if (msg.type === "hostMove" && !isHost) {
     oppHitbox.position.set(msg.x, msg.y, msg.z);
     oppVisual.position.copy(oppHitbox.position);
   }
-
   if (msg.type === "guestMove" && isHost) {
     oppHitbox.position.set(msg.x, msg.y, msg.z);
     oppVisual.position.copy(oppHitbox.position);
   }
-
   if (msg.type === "paintDot") {
     const ctx = oppCtxList[msg.face];
     ctx.fillStyle = msg.color;
@@ -447,16 +360,20 @@ function handleRemoteMessage(msg) {
     ctx.fill();
     oppTextureList[msg.face].needsUpdate = true;
   }
-
   if (msg.type === "win") {
     resultBox.innerText = "💥 撃たれました… ホストの負け";
     resultBox.style.display = "block";
   }
 }
+
+// 当たり判定のダミー（必要なら中身をあなたの元コードに差し替え）
+function isColliding(a, b) {
+  return false;
+}
+// 元のTPSカメラ（自滅しない形に整理）
 function updateCamera() {
   const height = 8;
-
-  const angle = camera.rotation.y;
+  const angle = camera.rotation.y; // 視点角度はそのまま（今まで動いてたやつ）
 
   const offsetX = Math.sin(angle) * zoomDistance;
   const offsetZ = Math.cos(angle) * zoomDistance;
@@ -470,10 +387,8 @@ function updateCamera() {
 
 function animate() {
   requestAnimationFrame(animate);
-
   updatePlayer();
   updateCamera();
-
   renderer.render(scene, camera);
 }
 animate();
@@ -483,3 +398,6 @@ window.addEventListener("resize", () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+</script>
+</body>
+</html>
