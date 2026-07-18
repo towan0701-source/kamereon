@@ -15,6 +15,7 @@
       position:fixed; top:10px; right:10px;
       background:#222; padding:10px; border-radius:8px;
       width:150px;
+      display:none; /* ← ゲストは非表示 */
     }
 
     #paintUI input {
@@ -37,7 +38,7 @@
   <button onclick="copyInvite()">コピー</button>
 </div>
 
-<!-- 🎨 カラーパレットUI -->
+<!-- 🎨 カラーパレットUI（ホストだけ表示） -->
 <div id="paintUI">
   <div>🎨 カラーパレット</div>
   R <input type="range" id="rSlider" min="0" max="255" value="85">
@@ -65,6 +66,7 @@ const roomId = params.get("room");
 
 const inviteBox = document.getElementById("invite");
 const inviteURL = document.getElementById("inviteURL");
+const paintUI = document.getElementById("paintUI");
 
 function copyInvite() {
   navigator.clipboard.writeText(inviteURL.innerText);
@@ -80,6 +82,9 @@ if (!roomId) {
     const url = `${location.origin}${location.pathname}?room=${id}`;
     inviteURL.innerText = url;
     inviteBox.style.display = "block";
+
+    // ★ ホストはカラーパレットを表示
+    paintUI.style.display = "block";
   });
 
   peer.on("connection", c => {
@@ -96,6 +101,9 @@ if (!roomId) {
   peer.on("open", () => {
     conn = peer.connect(roomId);
     setupConnection();
+
+    // ★ ゲストはカラーパレットを非表示
+    paintUI.style.display = "none";
   });
 }
 
@@ -373,7 +381,7 @@ function updatePlayer() {
 }
 
 // ============================
-// 🎨 カラーパレット処理
+// 🎨 カラーパレット処理（ホストのみ）
 // ============================
 const rSlider = document.getElementById("rSlider");
 const gSlider = document.getElementById("gSlider");
@@ -393,8 +401,10 @@ bSlider.oninput = updatePreview;
 
 updatePreview();
 
-// 色を適用
+// 色を適用（ホストのみ）
 function applyColor() {
+  if (!isHost) return; // ★ ゲストは色変更不可
+
   const r = parseInt(rSlider.value);
   const g = parseInt(gSlider.value);
   const b = parseInt(bSlider.value);
