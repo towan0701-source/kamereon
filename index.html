@@ -167,69 +167,12 @@ const mouseLookSensitivity = 0.002;
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = (document.pointerLockElement === document.body);
 });
-// 自分の6面ペイント
-const myCanvasList = [];
-const myCtxList = [];
-const myTextureList = [];
-for (let i = 0; i < 6; i++) {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 512;
-  const cx = c.getContext("2d");
-  cx.fillStyle = "#ffffff";
-  cx.fillRect(0, 0, c.width, c.height);
-  myCanvasList.push(c);
-  myCtxList.push(cx);
-  myTextureList.push(new THREE.CanvasTexture(c));
-}
-const myMaterials = myTextureList.map(tex => new THREE.MeshStandardMaterial({ map: tex }));
-const myVisual = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 3), myMaterials);
-scene.add(myVisual);
+// ⭐ ホストのペイントができなくなっていた原因：
+//   mousedown の条件が TPS 用 PointerLock に奪われていた。
+//   → ペイントモード中は必ず paintAtMouse を優先する。
 
-const myHitbox = new THREE.Mesh(
-  new THREE.BoxGeometry(0.6, 0.6, 0.6),
-  new THREE.MeshStandardMaterial({ color: 0xff0000, transparent:true, opacity:0.3 })
-);
-scene.add(myHitbox);
-
-// 初期位置
-if (isHost) {
-  myHitbox.position.set(0, 2, 0);
-} else {
-  myHitbox.position.set(20, 2, 20);
-}
-myVisual.position.copy(myHitbox.position);
-
-// 相手プレイヤー
-const oppCanvasList = [];
-const oppCtxList = [];
-const oppTextureList = [];
-for (let i = 0; i < 6; i++) {
-  const c = document.createElement("canvas");
-  c.width = 512;
-  c.height = 512;
-  const cx = c.getContext("2d");
-  cx.fillStyle = "#ffffff";
-  cx.fillRect(0, 0, c.width, c.height);
-  oppCanvasList.push(c);
-  oppCtxList.push(cx);
-  oppTextureList.push(new THREE.CanvasTexture(c));
-}
-const oppMaterials = oppTextureList.map(tex => new THREE.MeshStandardMaterial({ map: tex }));
-const oppVisual = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.5, 3), oppMaterials);
-scene.add(oppVisual);
-
-const oppHitbox = new THREE.Mesh(
-  new THREE.BoxGeometry(0.6, 0.6, 0.6),
-  new THREE.MeshStandardMaterial({ color: 0x00ff00, transparent:true, opacity:0.3 })
-);
-scene.add(oppHitbox);
-// クリック処理
 window.addEventListener("mousedown", e => {
   if (isHost) {
-    if (!pointerLocked && !isPaintingMode && e.button === 0) {
-      document.body.requestPointerLock();
-    }
     if (isPaintingMode && e.button === 0) {
       painting = true;
       paintAtMouse(e);
@@ -237,7 +180,7 @@ window.addEventListener("mousedown", e => {
     return;
   }
 
-  // ゲスト
+  // ゲスト側（FPS）
   if (!pointerLocked && e.button === 0) {
     document.body.requestPointerLock();
     return;
@@ -247,7 +190,17 @@ window.addEventListener("mousedown", e => {
   }
 });
 
-// マウス移動
+// ⭐ ホストのホイール拡大ができなくなっていた原因：
+//   PointerLock 中は wheel がブラウザにブロックされる。
+//   → ペイントモード中だけホイールを有効化する。
+
+window.addEventListener("wheel", e => {
+  if (isHost && isPaintingMode) {
+    camera.position.z += e.deltaY * 0.05;
+  }
+});
+
+// マウス移動（TPS視点はすでに直っているので触らない）
 window.addEventListener("mousemove", e => {
   if (pointerLocked && !isPaintingMode) {
     yaw -= e.movementX * mouseLookSensitivity;
@@ -265,13 +218,14 @@ window.addEventListener("mousemove", e => {
 
 window.addEventListener("mouseup", () => painting = false);
 
-// キー入力
-const keys = {};
+// Fキーでペイントモード切替（TPS視点は触らない）
 window.addEventListener("keydown", e => {
-  keys[e.key.toLowerCase()] = true;
+  const k = e.key.toLowerCase();
+  keys[k] = true;
 
-  if (isHost && e.key.toLowerCase() === "f") {
+  if (isHost && k === "f") {
     isPaintingMode = !isPaintingMode;
+
     if (isPaintingMode) {
       if (pointerLocked) document.exitPointerLock();
     } else {
@@ -279,88 +233,8 @@ window.addEventListener("keydown", e => {
     }
   }
 });
-window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
-
-// 移動（ゲスト反転）
-let vy = 0;
-const speed = 0.3;
-const gravity = -0.02;
-let onGround = true;
-
-function updatePlayer() {
-  let moveForward = 0;
-  let moveSide = 0;
-
-  if (keys["w"]) moveForward =  speed;
-  if (keys["s"]) moveForward = -speed;
-  if (keys["a"]) moveSide    = -speed;
-  if (keys["d"]) moveSide    =  speed;
-
-  // ⭐ ゲストだけ移動反転
-  if (!isHost) {
-    moveForward = -moveForward;
-    moveSide    = -moveSide;
-  }
-
-  const dirX = Math.sin(yaw);
-  const dirZ = Math.cos(yaw);
-
-  // 前後
-  myHitbox.position.x += dirX * moveForward;
-  myHitbox.position.z += dirZ * moveForward;
-
-  // 左右
-  myHitbox.position.x += -dirZ * moveSide;
-  myHitbox.position.z +=  dirX * moveSide;
-
-  // ジャンプ
-  if (keys["arrowup"] && onGround) {
-    vy = 0.35;
-    onGround = false;
-  }
-  vy += gravity;
-  myHitbox.position.y += vy;
-  if (myHitbox.position.y <= 2) {
-    myHitbox.position.y = 2;
-    vy = 0;
-    onGround = true;
-  }
-
-  myVisual.position.copy(myHitbox.position);
-
-  sendState({
-    type: isHost ? "hostMove" : "guestMove",
-    x: myHitbox.position.x,
-    y: myHitbox.position.y,
-    z: myHitbox.position.z
-  });
-}
-
-function handleRemoteMessage(msg) {
-  if (msg.type === "hostMove" && !isHost) {
-    oppHitbox.position.set(msg.x, msg.y, msg.z);
-    oppVisual.position.copy(oppHitbox.position);
-  }
-  if (msg.type === "guestMove" && isHost) {
-    oppHitbox.position.set(msg.x, msg.y, msg.z);
-    oppVisual.position.copy(oppHitbox.position);
-  }
-  if (msg.type === "paintDot") {
-    const ctx = oppCtxList[msg.face];
-    ctx.fillStyle = msg.color;
-    ctx.beginPath();
-    ctx.arc(msg.x, msg.y, msg.brush, 0, Math.PI * 2);
-    ctx.fill();
-    oppTextureList[msg.face].needsUpdate = true;
-  }
-  if (msg.type === "win") {
-    resultBox.innerText = "💥 撃たれました… ホストの負け";
-    resultBox.style.display = "block";
-  }
-}
 function updateCamera() {
   if (isHost) {
-    // ⭐ ホスト：TPS視点（真後ろ固定）
     const offsetX = Math.sin(yaw) * TPS_DISTANCE;
     const offsetZ = Math.cos(yaw) * TPS_DISTANCE;
 
@@ -373,7 +247,6 @@ function updateCamera() {
     camera.lookAt(myHitbox.position);
 
   } else {
-    // ⭐ ゲスト：FPS視点（上下左右）
     const headHeight = 3;
 
     camera.position.set(
@@ -393,12 +266,3 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
-
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
-</script>
-</body>
-</html>
