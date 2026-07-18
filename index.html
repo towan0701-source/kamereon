@@ -356,7 +356,7 @@ window.addEventListener("mousedown", e => {
 });
 
 // ============================
-// ⭐ 元の移動コード（カメラ角度依存）
+// ⭐ 元の TPS 移動コード（カメラ角度依存）
 // ============================
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
@@ -369,9 +369,12 @@ let onGround = true;
 
 function updatePlayer() {
 
-  const oldX = playerHitbox.position.x;
-  const oldY = playerHitbox.position.y;
-  const oldZ = playerHitbox.position.z;
+  // ⭐ ホストとゲストで動かす対象を分ける
+  const target = isHost ? playerHitbox : oppHitbox;
+
+  const oldX = target.position.x;
+  const oldY = target.position.y;
+  const oldZ = target.position.z;
 
   let moveX = 0;
   let moveZ = 0;
@@ -386,19 +389,17 @@ function updatePlayer() {
   const sin = Math.sin(angle);
   const cos = Math.cos(angle);
 
-  playerHitbox.position.x += moveZ * sin;
-  playerHitbox.position.z += moveZ * cos;
+  target.position.x += moveZ * sin;
+  target.position.z += moveZ * cos;
 
-  playerHitbox.position.x -= moveX * cos;
-  playerHitbox.position.z += moveX * sin;
+  target.position.x -= moveX * cos;
+  target.position.z += moveX * sin;
 
   // 壁との当たり判定
   for (const obs of obstacles) {
-    if (isColliding(playerHitbox, obs)) {
-      const dx = playerHitbox.position.x - oldX;
-      const dz = playerHitbox.position.z - oldZ;
-      playerHitbox.position.x -= dx * 0.5;
-      playerHitbox.position.z -= dz * 0.5;
+    if (isColliding(target, obs)) {
+      target.position.x = oldX;
+      target.position.z = oldZ;
       break;
     }
   }
@@ -410,22 +411,58 @@ function updatePlayer() {
   }
 
   vy += gravity;
-  playerHitbox.position.y += vy;
+  target.position.y += vy;
 
-  if (playerHitbox.position.y <= 2) {
-    playerHitbox.position.y = 2;
+  if (target.position.y <= 2) {
+    target.position.y = 2;
     vy = 0;
     onGround = true;
   }
 
-  playerVisual.position.copy(playerHitbox.position);
+  // 見た目を同期
+  if (isHost) {
+    playerVisual.position.copy(playerHitbox.position);
+  } else {
+    oppVisual.position.copy(oppHitbox.position);
+  }
 
+  // ⭐ 位置を送る（ホストもゲストも送る）
   sendState({
-    type: "state",
-    x: playerHitbox.position.x,
-    y: playerHitbox.position.y,
-    z: playerHitbox.position.z
+    type: isHost ? "hostMove" : "guestMove",
+    x: target.position.x,
+    y: target.position.y,
+    z: target.position.z
   });
+}
+
+// ============================
+// ⭐ 受信処理（同期修正版）
+// ============================
+function handleRemoteMessage(msg) {
+
+  if (msg.type === "hostMove") {
+    playerHitbox.position.set(msg.x, msg.y, msg.z);
+    playerVisual.position.copy(playerHitbox.position);
+  }
+
+  if (msg.type === "guestMove") {
+    oppHitbox.position.set(msg.x, msg.y, msg.z);
+    oppVisual.position.copy(oppHitbox.position);
+  }
+
+  if (msg.type === "paintDot") {
+    const ctx = oppCtxList[msg.face];
+    ctx.fillStyle = msg.color;
+    ctx.beginPath();
+    ctx.arc(msg.x, msg.y, msg.brush, 0, Math.PI * 2);
+    ctx.fill();
+    oppTextureList[msg.face].needsUpdate = true;
+  }
+
+  if (msg.type === "win") {
+    resultBox.innerText = "💥 撃たれました… ホストの負け";
+    resultBox.style.display = "block";
+  }
 }
 // ============================
 // ⭐ TPSカメラ（元の方式）
