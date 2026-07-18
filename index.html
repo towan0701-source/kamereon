@@ -220,7 +220,6 @@ scene.add(playerHitbox);
 if (isHost) {
   playerHitbox.position.set(0, 2, 0);
 } else {
-  // ⭐ 壁の内側に修正
   playerHitbox.position.set(20, 2, 20);
 }
 playerVisual.position.copy(playerHitbox.position);
@@ -357,7 +356,7 @@ window.addEventListener("mousedown", e => {
 });
 
 // ============================
-// ⭐ 移動修正版（気持ち悪さゼロ）
+// ⭐ 元の移動コード（カメラ角度依存）
 // ============================
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
@@ -377,19 +376,29 @@ function updatePlayer() {
   let moveX = 0;
   let moveZ = 0;
 
-  if (keys["w"]) moveZ -= speed;
-  if (keys["s"]) moveZ += speed;
-  if (keys["a"]) moveX -= speed;
-  if (keys["d"]) moveX += speed;
+  if (keys["w"]) moveZ =  speed;
+  if (keys["s"]) moveZ = -speed;
+  if (keys["a"]) moveX = -speed;
+  if (keys["d"]) moveX =  speed;
 
-  playerHitbox.position.x += moveX;
-  playerHitbox.position.z += moveZ;
+  // ⭐ カメラ角度で移動方向を決める（元の方式）
+  const angle = camera.rotation.y;
+  const sin = Math.sin(angle);
+  const cos = Math.cos(angle);
+
+  playerHitbox.position.x += moveZ * sin;
+  playerHitbox.position.z += moveZ * cos;
+
+  playerHitbox.position.x -= moveX * cos;
+  playerHitbox.position.z += moveX * sin;
 
   // 壁との当たり判定
   for (const obs of obstacles) {
     if (isColliding(playerHitbox, obs)) {
-      playerHitbox.position.x = oldX;
-      playerHitbox.position.z = oldZ;
+      const dx = playerHitbox.position.x - oldX;
+      const dz = playerHitbox.position.z - oldZ;
+      playerHitbox.position.x -= dx * 0.5;
+      playerHitbox.position.z -= dz * 0.5;
       break;
     }
   }
@@ -419,24 +428,22 @@ function updatePlayer() {
   });
 }
 // ============================
-// ⭐ TPSカメラ完全修正版
+// ⭐ TPSカメラ（元の方式）
 // ============================
 function updateCamera() {
   const height = 8;
 
-  // プレイヤーの方向を見る
-  camera.lookAt(playerHitbox.position);
-
-  // カメラ位置を決める（循環しない）
+  // ⭐ カメラ角度は維持する（プレイヤーを向けない）
   const angle = camera.rotation.y;
+
   const offsetX = Math.sin(angle) * zoomDistance;
   const offsetZ = Math.cos(angle) * zoomDistance;
 
-  camera.position.set(
-    playerHitbox.position.x - offsetX,
-    playerHitbox.position.y + height,
-    playerHitbox.position.z - offsetZ
-  );
+  camera.position.x = playerHitbox.position.x - offsetX;
+  camera.position.y = playerHitbox.position.y + height;
+  camera.position.z = playerHitbox.position.z - offsetZ;
+
+  camera.lookAt(playerHitbox.position);
 }
 
 // ============================
