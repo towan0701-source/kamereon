@@ -152,16 +152,15 @@ const floor = new THREE.Mesh(
 floor.position.set(0, -0.5, 0);
 scene.add(floor);
 
-// ズーム
-let zoomDistance = 15;
-window.addEventListener("wheel", e => {
-  zoomDistance += e.deltaY * 0.02;
-  zoomDistance = Math.max(5, Math.min(40, zoomDistance));
-});
+// ⭐ TPSカメラ距離（あなたが選んだ設定）
+const TPS_DISTANCE = 15;
+const TPS_HEIGHT = 8;
 
 // ⭐ 新フラグ
-let isPaintingMode = false;      // ホスト専用ペイントモード
-let pointerLocked = false;       // Pointer Lock状態
+let isPaintingMode = false;
+let pointerLocked = false;
+let pitch = 0; // FPS上下視点
+
 const mouseLookSensitivity = 0.002;
 
 // Pointer Lock状態監視
@@ -230,38 +229,33 @@ const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let painting = false;
 
-// ⭐ クリック処理（Pointer Lockの再取得を禁止）
+// ⭐ クリック処理（Pointer Lockの再取得禁止）
 window.addEventListener("mousedown", e => {
   if (isHost) {
-    // ペイントモード中：ペイントのみ
     if (isPaintingMode && e.button === 0) {
       painting = true;
       paintAtMouse(e);
-      return;
     }
-    // ペイントモード外：クリックではPointer Lockを再取得しない
     return;
   }
 
-  // ⭐ ゲスト（FPS）
+  // ゲスト（FPS）
   if (!pointerLocked) {
-    // 最初の1回だけロック
     document.body.requestPointerLock();
     return;
   }
 
-  // ロック中の左クリックはレーザー
   if (e.button === 0) shootLaser();
 });
 
 // ⭐ マウス移動（視点回転＋ペイント）
 window.addEventListener("mousemove", e => {
-  // Pointer Lock中の視点回転（ホスト・ゲスト共通）
   if (pointerLocked && !isPaintingMode) {
     camera.rotation.y -= e.movementX * mouseLookSensitivity;
+    pitch -= e.movementY * mouseLookSensitivity;
+    pitch = Math.max(-1.2, Math.min(1.2, pitch));
   }
 
-  // ペイント中（ホスト）
   if (painting && isHost && isPaintingMode) {
     paintAtMouse(e);
   }
@@ -324,15 +318,12 @@ window.addEventListener("keydown", e => {
   const k = e.key.toLowerCase();
   keys[k] = true;
 
-  // ⭐ ホストのFキーでペイントモード切替
   if (isHost && k === "f") {
     isPaintingMode = !isPaintingMode;
 
     if (isPaintingMode) {
-      // ペイントモードON → Pointer Lock解除
       if (pointerLocked) document.exitPointerLock();
     } else {
-      // ペイントモードOFF → Pointer Lock再取得
       document.body.requestPointerLock();
     }
   }
@@ -407,33 +398,32 @@ function handleRemoteMessage(msg) {
     resultBox.style.display = "block";
   }
 }
-// ⭐ FPS/TPS カメラ切り替え
+// ⭐ 完全安定版 TPS/FPS カメラ
 function updateCamera() {
-  const angle = camera.rotation.y;
+  const yaw = camera.rotation.y;
 
   if (isHost) {
-    // ホストはTPS視点
-    const height = 8;
-    const offsetX = Math.sin(angle) * zoomDistance;
-    const offsetZ = Math.cos(angle) * zoomDistance;
+    // TPSカメラ（自動追尾ではなく円軌道）
+    const offsetX = Math.sin(yaw) * TPS_DISTANCE;
+    const offsetZ = Math.cos(yaw) * TPS_DISTANCE;
 
     camera.position.x = myHitbox.position.x - offsetX;
-    camera.position.y = myHitbox.position.y + height;
+    camera.position.y = myHitbox.position.y + TPS_HEIGHT;
     camera.position.z = myHitbox.position.z - offsetZ;
 
     camera.lookAt(myHitbox.position);
 
   } else {
-    // ゲストはFPS視点
+    // FPSカメラ（上下左右）
     const headHeight = 3;
     camera.position.x = myHitbox.position.x;
     camera.position.y = myHitbox.position.y + headHeight;
     camera.position.z = myHitbox.position.z;
 
     const dir = new THREE.Vector3(
-      Math.sin(angle),
-      0,
-      Math.cos(angle)
+      Math.sin(yaw),
+      pitch,
+      Math.cos(yaw)
     );
     const lookTarget = new THREE.Vector3().addVectors(camera.position, dir);
     camera.lookAt(lookTarget);
