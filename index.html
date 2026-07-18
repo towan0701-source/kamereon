@@ -159,8 +159,11 @@ const TPS_HEIGHT = 8;
 // ⭐ 新フラグ
 let isPaintingMode = false;
 let pointerLocked = false;
-let pitch = 0; // FPS上下視点
 
+// FPS上下視点
+let pitch = 0;
+
+// マウス感度
 const mouseLookSensitivity = 0.002;
 
 // Pointer Lock状態監視
@@ -251,9 +254,14 @@ window.addEventListener("mousedown", e => {
 // ⭐ マウス移動（視点回転＋ペイント）
 window.addEventListener("mousemove", e => {
   if (pointerLocked && !isPaintingMode) {
+    // 横回転（ホスト・ゲスト共通）
     camera.rotation.y -= e.movementX * mouseLookSensitivity;
-    pitch -= e.movementY * mouseLookSensitivity;
-    pitch = Math.max(-1.2, Math.min(1.2, pitch));
+
+    // FPS縦回転（ゲストのみ）
+    if (!isHost) {
+      pitch -= e.movementY * mouseLookSensitivity;
+      pitch = Math.max(-1.2, Math.min(1.2, pitch));
+    }
   }
 
   if (painting && isHost && isPaintingMode) {
@@ -403,30 +411,34 @@ function updateCamera() {
   const yaw = camera.rotation.y;
 
   if (isHost) {
-    // TPSカメラ（自動追尾ではなく円軌道）
+    // TPSカメラ（lookAt を使わない）
     const offsetX = Math.sin(yaw) * TPS_DISTANCE;
     const offsetZ = Math.cos(yaw) * TPS_DISTANCE;
 
-    camera.position.x = myHitbox.position.x - offsetX;
-    camera.position.y = myHitbox.position.y + TPS_HEIGHT;
-    camera.position.z = myHitbox.position.z - offsetZ;
+    camera.position.set(
+      myHitbox.position.x - offsetX,
+      myHitbox.position.y + TPS_HEIGHT,
+      myHitbox.position.z - offsetZ
+    );
 
-    camera.lookAt(myHitbox.position);
+    // カメレオンの方向を向く
+    const dx = myHitbox.position.x - camera.position.x;
+    const dz = myHitbox.position.z - camera.position.z;
+    const angle = Math.atan2(dx, dz);
+
+    camera.rotation.set(0, angle, 0);
 
   } else {
     // FPSカメラ（上下左右）
     const headHeight = 3;
-    camera.position.x = myHitbox.position.x;
-    camera.position.y = myHitbox.position.y + headHeight;
-    camera.position.z = myHitbox.position.z;
 
-    const dir = new THREE.Vector3(
-      Math.sin(yaw),
-      pitch,
-      Math.cos(yaw)
+    camera.position.set(
+      myHitbox.position.x,
+      myHitbox.position.y + headHeight,
+      myHitbox.position.z
     );
-    const lookTarget = new THREE.Vector3().addVectors(camera.position, dir);
-    camera.lookAt(lookTarget);
+
+    camera.rotation.set(pitch, yaw, 0);
   }
 }
 
