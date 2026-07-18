@@ -131,6 +131,19 @@ const floor = new THREE.Mesh(
 );
 floor.position.set(0, -0.5, 0);
 scene.add(floor);
+
+// ============================
+// 🔍 ズーム用変数
+// ============================
+let zoomDistance = 15;   // 初期ズーム距離
+let zoomMin = 5;
+let zoomMax = 40;
+
+// マウスホイールでズーム
+window.addEventListener("wheel", e => {
+  zoomDistance += e.deltaY * 0.02;
+  zoomDistance = Math.max(zoomMin, Math.min(zoomMax, zoomDistance));
+});
 // ============================
 // 🎨 6面ペイント用 CanvasTexture
 // ============================
@@ -270,7 +283,6 @@ function paintAtMouse(e) {
     const uv = hits[0].uv;
     const face = hits[0].faceIndex;
 
-    // BoxGeometry の面番号 → materialIndex
     const materialIndex = Math.floor(face / 2);
 
     const x = uv.x * canvasList[materialIndex].width;
@@ -287,7 +299,6 @@ function paintAtMouse(e) {
 
     textureList[materialIndex].needsUpdate = true;
 
-    // ---- オンライン同期 ----
     sendState({
       type: "paintDot",
       face: materialIndex,
@@ -405,15 +416,14 @@ function updatePlayer() {
   });
 }
 // ============================
-// TPSカメラ追跡
+// TPSカメラ追跡（ズーム対応）
 // ============================
 function updateCamera() {
-  const dist = 15;
   const height = 8;
 
   const angle = camera.rotation.y;
-  const offsetX = Math.sin(angle) * dist;
-  const offsetZ = Math.cos(angle) * dist;
+  const offsetX = Math.sin(angle) * zoomDistance;
+  const offsetZ = Math.cos(angle) * zoomDistance;
 
   camera.position.x += ((playerHitbox.position.x - offsetX) - camera.position.x) * 0.1;
   camera.position.y += ((playerHitbox.position.y + height) - camera.position.y) * 0.1;
