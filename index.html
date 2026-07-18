@@ -69,7 +69,10 @@
 <div id="crosshair"></div>
 <div id="resultBox"></div>
 
-<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script type="module">
+  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+  window.THREE = THREE; // ← 既存コードがそのまま動く魔法の1行
+</script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <script>
 let peer = null;
