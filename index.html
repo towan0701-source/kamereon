@@ -370,11 +370,7 @@ function updateCamera() {
       myHitbox.position.z - offsetZ
     );
 
-    const dx = myHitbox.position.x - camera.position.x;
-    const dz = myHitbox.position.z - camera.position.z;
-    const angle = Math.atan2(dx, dz);
-
-    camera.rotation.set(0, angle, 0);
+    camera.lookAt(myHitbox.position);
 
   } else {
     // ⭐ ゲスト：FPS視点（上下左右）
