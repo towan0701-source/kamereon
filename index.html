@@ -22,7 +22,7 @@
       width:100%;
     }
 
-    /* 🎯 ゲスト用照準（カーソル） */
+    /* 🎯 ゲスト用照準 */
     #crosshair {
       position:fixed;
       top:50%;
@@ -83,9 +83,7 @@
   <input type="range" id="brushSize" min="5" max="50" value="10">
 </div>
 
-<!-- 🎯 ゲスト用照準 -->
 <div id="crosshair"></div>
-
 <div id="resultBox"></div>
 
 <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
@@ -135,9 +133,7 @@ if (!roomId) {
     conn = peer.connect(roomId);
     setupConnection();
 
-    // 🎯 ゲストは照準を表示
     crosshair.style.display = "block";
-
     paintUI.style.display = "none";
   });
 }
@@ -281,7 +277,7 @@ const oppHitbox = new THREE.Mesh(
 scene.add(oppHitbox);
 
 // ============================
-// 障害物（あなたのコードそのまま）
+// 障害物
 // ============================
 function addWall(x, y, z, rotY) {
   const wall = new THREE.Mesh(
@@ -359,7 +355,7 @@ function paintAtMouse(e) {
 }
 
 // ============================
-// 🔫 ゲストのレーザー光線（照準方向に発射）
+// 🔫 ゲストのレーザー光線
 // ============================
 function shootLaser() {
   if (isHost) return;
@@ -390,7 +386,6 @@ function shootLaser() {
   }
 }
 
-// 左クリックで撃つ（ゲスト）
 window.addEventListener("mousedown", e => {
   if (!isHost && e.button === 0) shootLaser();
 });
@@ -420,20 +415,22 @@ function handleRemoteMessage(msg) {
   }
 }
 // ============================
-// TPSカメラ追跡（ズーム対応）
+// ⭐ TPSカメラ追跡（真っ黒問題の修正版）
 // ============================
 function updateCamera() {
   const height = 8;
 
+  // ⭐ プレイヤーの方向を見る（これが重要）
+  camera.lookAt(playerHitbox.position);
+
+  // カメラの向きに合わせて TPS 位置を計算
   const angle = camera.rotation.y;
   const offsetX = Math.sin(angle) * zoomDistance;
   const offsetZ = Math.cos(angle) * zoomDistance;
 
-  camera.position.x += ((playerHitbox.position.x - offsetX) - camera.position.x) * 0.1;
-  camera.position.y += ((playerHitbox.position.y + height) - camera.position.y) * 0.1;
-  camera.position.z += ((playerHitbox.position.z - offsetZ) - camera.position.z) * 0.1;
-
-  camera.lookAt(playerHitbox.position);
+  camera.position.x = playerHitbox.position.x - offsetX;
+  camera.position.y = playerHitbox.position.y + height;
+  camera.position.z = playerHitbox.position.z - offsetZ;
 }
 
 // ============================
