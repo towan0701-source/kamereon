@@ -357,7 +357,7 @@ window.addEventListener("mousedown", e => {
 });
 
 // ============================
-// ⭐ 復活した updatePlayer（致命的エラー修正）
+// ⭐ 移動修正版（気持ち悪さゼロ）
 // ============================
 const keys = {};
 window.addEventListener("keydown", e => keys[e.key.toLowerCase()] = true);
@@ -377,31 +377,24 @@ function updatePlayer() {
   let moveX = 0;
   let moveZ = 0;
 
-  if (keys["w"]) moveZ =  speed;
-  if (keys["s"]) moveZ = -speed;
-  if (keys["a"]) moveX = -speed;
-  if (keys["d"]) moveX =  speed;
+  if (keys["w"]) moveZ -= speed;
+  if (keys["s"]) moveZ += speed;
+  if (keys["a"]) moveX -= speed;
+  if (keys["d"]) moveX += speed;
 
-  const angle = camera.rotation.y;
-  const sin = Math.sin(angle);
-  const cos = Math.cos(angle);
+  playerHitbox.position.x += moveX;
+  playerHitbox.position.z += moveZ;
 
-  playerHitbox.position.x += moveZ * sin;
-  playerHitbox.position.z += moveZ * cos;
-
-  playerHitbox.position.x -= moveX * cos;
-  playerHitbox.position.z += moveX * sin;
-
+  // 壁との当たり判定
   for (const obs of obstacles) {
     if (isColliding(playerHitbox, obs)) {
-      const dx = playerHitbox.position.x - oldX;
-      const dz = playerHitbox.position.z - oldZ;
-      playerHitbox.position.x -= dx * 0.5;
-      playerHitbox.position.z -= dz * 0.5;
+      playerHitbox.position.x = oldX;
+      playerHitbox.position.z = oldZ;
       break;
     }
   }
 
+  // ジャンプ
   if (keys["arrowup"] && onGround) {
     vy = 0.35;
     onGround = false;
@@ -426,15 +419,15 @@ function updatePlayer() {
   });
 }
 // ============================
-// ⭐ TPSカメラ完全修正版（循環バグ解消）
+// ⭐ TPSカメラ完全修正版
 // ============================
 function updateCamera() {
   const height = 8;
 
-  // プレイヤーの方向を見る（角度だけ決める）
+  // プレイヤーの方向を見る
   camera.lookAt(playerHitbox.position);
 
-  // 角度を使って位置を決める（循環しない）
+  // カメラ位置を決める（循環しない）
   const angle = camera.rotation.y;
   const offsetX = Math.sin(angle) * zoomDistance;
   const offsetZ = Math.cos(angle) * zoomDistance;
