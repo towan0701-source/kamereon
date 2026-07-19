@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8" />
-<title>Chameleon Online - Full</title>
+<title>Chameleon Online - Paint Host Only</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
   body { margin:0; overflow:hidden; background:#111; color:#fff; font-family:system-ui; }
@@ -26,12 +26,13 @@
   <button id="copyInviteBtn">コピー</button>
 </div>
 
-<!-- Paint UI -->
+<!-- Paint UI (ホストのみ表示) -->
 <div id="paintUI" style="display:none;">
   <div>🎨 ペイントカラー</div>
   <input id="colorPicker" type="color" value="#5599ff">
   <div style="margin-top:8px;">🖌 ブラシサイズ</div>
   <input id="brushSize" type="range" min="4" max="48" value="12">
+  <div style="font-size:12px;margin-top:6px;color:#ccc">ホストのみペイント可能</div>
 </div>
 
 <div id="cross"></div>
@@ -93,7 +94,6 @@ function setupConnectionHandlers(connection) {
     conn = connection;
     if (isHost) hideInvite();
     updateStatus("connected");
-    // 初期同期など
     sendState({ type: "hello", role: isHost ? "host" : "guest" });
   });
   connection.on("data", data => {
@@ -115,7 +115,7 @@ function setupConnectionHandlers(connection) {
 }
 
 function initPeer() {
-  peer = new Peer(); // オプションが必要ならここに追加
+  peer = new Peer();
   peer.on("open", id => {
     if (!roomId) {
       isHost = true;
@@ -125,7 +125,6 @@ function initPeer() {
       updateStatus("host waiting");
     } else {
       isHost = false;
-      // ゲストは自動接続
       const c = peer.connect(roomId);
       setupConnectionHandlers(c);
       hideInvite();
@@ -135,7 +134,6 @@ function initPeer() {
     }
   });
   peer.on("connection", c => {
-    // ホストが複数ゲストを受ける場合
     setupConnectionHandlers(c);
   });
   peer.on("error", err => {
@@ -186,7 +184,7 @@ floor.position.y = -0.5;
 scene.add(floor);
 
 /* -------------------------
-   Player objects
+   Player objects (host's chameleon = myVisual)
    ------------------------- */
 const myHitbox = new THREE.Mesh(
   new THREE.BoxGeometry(0.6, 0.6, 0.6),
@@ -195,9 +193,19 @@ const myHitbox = new THREE.Mesh(
 scene.add(myHitbox);
 myHitbox.position.set(0, 2, 0);
 
+/* myVisual にキャンバステクスチャを貼る（ホストにペイントする対象） */
+const chameleonCanvas = document.createElement("canvas");
+chameleonCanvas.width = chameleonCanvas.height = 1024;
+const chameleonCtx = chameleonCanvas.getContext("2d");
+/* 初期ベースカラー（薄いグレー） */
+chameleonCtx.fillStyle = "#9999ff";
+chameleonCtx.fillRect(0, 0, chameleonCanvas.width, chameleonCanvas.height);
+const chameleonTex = new THREE.CanvasTexture(chameleonCanvas);
+chameleonTex.flipY = false; // UV の向きに合わせる
+
 const myVisual = new THREE.Mesh(
   new THREE.BoxGeometry(1.5, 1.5, 3),
-  new THREE.MeshStandardMaterial({ color: 0x9999ff })
+  new THREE.MeshStandardMaterial({ map: chameleonTex, color: 0xffffff })
 );
 scene.add(myVisual);
 myVisual.position.copy(myHitbox.position);
@@ -228,12 +236,13 @@ document.addEventListener("pointerlockchange", () => {
 });
 
 /* -------------------------
-   Input handling
+   Input handling (Fキーはホストのみ)
    ------------------------- */
 const keys = {};
 window.addEventListener("keydown", e => {
   keys[e.key.toLowerCase()] = true;
   if (e.key.toLowerCase() === "f") {
+    if (!isHost) return; // ★ ゲストは F でペイント切替不可
     isPaintingMode = !isPaintingMode;
     updatePointerLockState();
     updateUI();
@@ -289,45 +298,39 @@ function updatePointerLockState() {
 function updateUI() {
   paintUI.style.display = (isHost ? "block" : "none");
   cross.style.display = (!isHost && !isPaintingMode) ? "block" : "none";
-  updateStatus(isHost ? (isPaintingMode ? "host paint" : "host play") : (isPaintingMode ? "guest paint" : "guest play"));
+  updateStatus(isHost ? (isPaintingMode ? "host paint" : "host play") : (isPaintingMode ? "guest paint (disabled)" : "guest play"));
 }
 
 /* -------------------------
-   Paint system (canvas on floor)
+   Paint system: ホストのカメレオン(myVisual)に描く
+   - myVisual のジオメトリに UV がある前提（BoxGeometry は UV を持つ）
+   - レイキャストで myVisual に当たった UV を取得してキャンバスに描画
    ------------------------- */
-const paintCanvas = document.createElement("canvas");
-paintCanvas.width = paintCanvas.height = 1024;
-const paintCtx = paintCanvas.getContext("2d");
-paintCtx.fillStyle = "#ffffff"; paintCtx.fillRect(0,0,paintCanvas.width,paintCanvas.height);
-const paintTex = new THREE.CanvasTexture(paintCanvas);
-const paintPlane = new THREE.Mesh(
-  new THREE.PlaneGeometry(50, 50),
-  new THREE.MeshBasicMaterial({ map: paintTex, side: THREE.DoubleSide })
-);
-paintPlane.rotation.x = -Math.PI/2;
-paintPlane.position.y = 0.01;
-scene.add(paintPlane);
-
 function paintAtMouse(e) {
   try {
-    if (!paintCtx || !renderer) return;
+    if (!chameleonCtx || !renderer) return;
+    // マウス座標正規化
     const rect = renderer.domElement.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     const ray = new THREE.Raycaster();
     ray.setFromCamera(new THREE.Vector2(x, y), camera);
-    const hits = ray.intersectObject(paintPlane, true);
+    // myVisual に対してレイキャスト
+    const hits = ray.intersectObject(myVisual, true);
     if (hits.length === 0) return;
-    const uv = hits[0].uv;
+    const hit = hits[0];
+    const uv = hit.uv;
     if (!uv) return;
-    const px = Math.floor(uv.x * paintCanvas.width);
-    const py = Math.floor((1 - uv.y) * paintCanvas.height);
-    paintCtx.fillStyle = brushColor;
-    paintCtx.beginPath();
-    paintCtx.arc(px, py, brushSize, 0, Math.PI * 2);
-    paintCtx.fill();
-    paintTex.needsUpdate = true;
-    // ネットワーク同期が必要ならここで sendState({type:"paint", x:px, y:py, color:brushColor, size:brushSize})
+    // UV -> キャンバス座標
+    const px = Math.floor(uv.x * chameleonCanvas.width);
+    const py = Math.floor((1 - uv.y) * chameleonCanvas.height);
+    chameleonCtx.fillStyle = brushColor;
+    chameleonCtx.beginPath();
+    chameleonCtx.arc(px, py, brushSize, 0, Math.PI * 2);
+    chameleonCtx.fill();
+    chameleonTex.needsUpdate = true;
+    // 必要ならここでネットワーク送信（paintDot）を行う
+    // 例: sendState({type:"paint", uv:{x:uv.x,y:uv.y}, color:brushColor, size:brushSize});
   } catch (err) {
     console.error("paintAtMouse error:", err);
   }
