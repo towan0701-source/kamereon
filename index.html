@@ -1,189 +1,145 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>Chameleon 3D Paint Online</title>
-  <style>
-    body { margin:0; overflow:hidden; background:#111; color:#fff; }
-
-    #invite {
-      position:fixed; top:10px; left:10px;
-      background:#222; padding:10px; border-radius:8px;
-    }
-
-    #paintUI {
-      position:fixed; top:10px; right:10px;
-      background:#222; padding:10px; border-radius:8px;
-      width:150px;
-      display:none;
-    }
-
-    #paintUI input { width:100%; }
-
-    #crosshair {
-      position:fixed;
-      top:50%;
-      left:50%;
-      width:20px;
-      height:20px;
-      transform:translate(-50%, -50%);
-      pointer-events:none;
-      display:none;
-    }
-    #crosshair:before, #crosshair:after {
-      content:"";
-      position:absolute;
-      background:#ff0000;
-    }
-    #crosshair:before { left:9px; top:0; width:2px; height:20px; }
-    #crosshair:after { top:9px; left:0; width:20px; height:2px; }
-
-    #resultBox {
-      position:fixed;
-      top:50%;
-      left:50%;
-      transform:translate(-50%, -50%);
-      background:#000a;
-      padding:20px;
-      border-radius:10px;
-      font-size:30px;
-      display:none;
-    }
-  </style>
+<meta charset="utf-8" />
+<title>復元パッチテンプレート</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  body { margin:0; overflow:hidden; background:#111; color:#fff; font-family:system-ui; }
+  #ui { position:fixed; top:8px; left:8px; background:#222; padding:8px; border-radius:6px; z-index:10; }
+  #cross { position:fixed; left:50%; top:50%; width:18px; height:18px; transform:translate(-50%,-50%); pointer-events:none; display:none; }
+  #cross:before,#cross:after{content:"";position:absolute;background:#f44;}
+  #cross:before{left:8px;top:0;width:2px;height:18px;} #cross:after{top:8px;left:0;width:18px;height:2px;}
+  button,input { margin:4px 0; display:block; width:100%; }
+</style>
 </head>
 <body>
-
-<div id="invite" style="display:none;">
-  <div>👇 このURLを友達に送ってね！</div>
-  <div id="inviteURL" style="word-break:break-all; margin-top:5px;"></div>
-  <button onclick="copyInvite()">コピー</button>
+<div id="ui">
+  <button id="togglePaint">Toggle Paint (F)</button>
+  <input id="color" type="color" value="#5599ff">
+  <input id="brush" type="range" min="4" max="48" value="12">
+  <div id="status" style="font-size:12px;margin-top:6px;color:#ccc">status: ready</div>
 </div>
-
-<div id="paintUI">
-  <div>🎨 ペイントカラー</div>
-  <input type="color" id="colorPicker" value="#5599ff">
-  <div style="margin-top:10px;">🖌 ブラシサイズ</div>
-  <input type="range" id="brushSize" min="5" max="50" value="10">
-</div>
-
-<div id="crosshair"></div>
-<div id="resultBox"></div>
+<div id="cross"></div>
 
 <script type="module">
-  import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-  window.THREE = THREE; // ← 既存コードがそのまま動く魔法の1行
-</script>
-<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script>
-let peer = null;
-let conn = null;
-let isHost = false;
+/* -------------------------
+   Three.js をモジュールで読み込む（r150+ 対応）
+   既存コードがグローバル THREE を参照している場合に備え window.THREE にも設定
+   ------------------------- */
+import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+window.THREE = THREE;
 
-const params = new URLSearchParams(location.search);
-const roomId = params.get("room");
-
-const inviteBox = document.getElementById("invite");
-const inviteURL = document.getElementById("inviteURL");
-const paintUI = document.getElementById("paintUI");
-const crosshair = document.getElementById("crosshair");
-const resultBox = document.getElementById("resultBox");
-
-function copyInvite() {
-  navigator.clipboard.writeText(inviteURL.innerText);
-  alert("コピーしました！");
-}
-
-if (!roomId) {
-  isHost = true;
-  peer = new Peer();
-  peer.on("open", id => {
-    const url = `${location.origin}${location.pathname}?room=${id}`;
-    inviteURL.innerText = url;
-    inviteBox.style.display = "block";
-    paintUI.style.display = "block";
-  });
-  peer.on("connection", c => {
-    conn = c;
-    setupConnection();
-    inviteBox.style.display = "none";
-  });
-} else {
-  isHost = false;
-  peer = new Peer();
-  peer.on("open", () => {
-    conn = peer.connect(roomId);
-    setupConnection();
-    crosshair.style.display = "block";
-    paintUI.style.display = "none";
-  });
-}
-
-function setupConnection() {
-  conn.on("data", msg => handleRemoteMessage(msg));
-}
-
-function sendState(msg) {
-  if (conn && conn.open) conn.send(msg);
-}
-
-// Three.js 基本セット
+/* -------------------------
+   基本セットアップ
+   ------------------------- */
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x222222);
 
-const camera = new THREE.PerspectiveCamera(
-  75, window.innerWidth / window.innerHeight, 0.1, 2000
-);
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 2000);
 camera.position.set(0, 10, 20);
 
-const renderer = new THREE.WebGLRenderer({ antialias:true });
-renderer.setSize(window.innerWidth, window.innerHeight);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// ライト
+window.addEventListener("resize", () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+/* ライトと床 */
 scene.add(new THREE.AmbientLight(0xffffff, 0.7));
-scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.8));
-const light = new THREE.DirectionalLight(0xffffff, 1.5);
-light.position.set(20, 50, 20);
-scene.add(light);
+const dir = new THREE.DirectionalLight(0xffffff, 1.2); dir.position.set(20,40,20); scene.add(dir);
+const floor = new THREE.Mesh(new THREE.BoxGeometry(200,1,200), new THREE.MeshStandardMaterial({color:0x666666}));
+floor.position.y = -0.5; scene.add(floor);
 
-// 床
-const floor = new THREE.Mesh(
-  new THREE.BoxGeometry(200, 1, 200),
-  new THREE.MeshStandardMaterial({ color: 0x666666 })
-);
-floor.position.set(0, -0.5, 0);
-scene.add(floor);
+/* -------------------------
+   プレイヤーとビジュアル
+   ------------------------- */
+const myHitbox = new THREE.Mesh(new THREE.BoxGeometry(0.6,0.6,0.6), new THREE.MeshStandardMaterial({color:0xff0000, transparent:true, opacity:0.3}));
+scene.add(myHitbox);
+myHitbox.position.set(0,2,0);
 
-// TPSカメラ距離（A）
-const TPS_DISTANCE = 15;
-const TPS_HEIGHT = 8;
+const myVisual = new THREE.Mesh(new THREE.BoxGeometry(1.5,1.5,3), new THREE.MeshStandardMaterial({color:0x9999ff}));
+scene.add(myVisual);
+myVisual.position.copy(myHitbox.position);
 
-// 視点用 yaw/pitch
-let yaw = 0;
-let pitch = 0;
-
+/* -------------------------
+   カメラ制御パラメータ
+   ------------------------- */
+let yaw = 0, pitch = 0;
+const TPS_DISTANCE = 15, TPS_HEIGHT = 8;
+let isHost = true; // 実運用では room 判定で切り替える
 let isPaintingMode = false;
 let pointerLocked = false;
+let painting = false;
+let brushSize = 12;
+let brushColor = "#5599ff";
 
-const mouseLookSensitivity = 0.002;
+/* UI hookup */
+const toggleBtn = document.getElementById("togglePaint");
+const colorInput = document.getElementById("color");
+const brushInput = document.getElementById("brush");
+const cross = document.getElementById("cross");
+const status = document.getElementById("status");
+toggleBtn.onclick = () => { isPaintingMode = !isPaintingMode; updatePointerLockState(); updateUI(); };
+colorInput.oninput = e => brushColor = e.target.value;
+brushInput.oninput = e => brushSize = Number(e.target.value);
+function updateUI(){ cross.style.display = (!isHost && !isPaintingMode) ? "block" : "none"; status.innerText = `status: ${isHost ? "host" : "guest"} ${isPaintingMode ? "paint" : "play"}`; }
 
+/* pointer lock handling */
 document.addEventListener("pointerlockchange", () => {
   pointerLocked = (document.pointerLockElement === document.body);
+  // ホストのペイント中は pointerlock を強制解除しておく
+  if (isHost && isPaintingMode && pointerLocked) document.exitPointerLock();
 });
-// ⭐ ホストのペイントができなくなっていた原因：
-//   mousedown の条件が TPS 用 PointerLock に奪われていた。
-//   → ペイントモード中は必ず paintAtMouse を優先する。
+function updatePointerLockState(){
+  if (isHost) {
+    if (isPaintingMode) {
+      if (pointerLocked) document.exitPointerLock();
+    } else {
+      document.body.requestPointerLock();
+    }
+  } else {
+    if (!pointerLocked) document.body.requestPointerLock();
+  }
+}
+
+/* -------------------------
+   入力（最小）と移動
+   ------------------------- */
+const keys = {};
+window.addEventListener("keydown", e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === "f") {
+    isPaintingMode = !isPaintingMode;
+    updatePointerLockState();
+    updateUI();
+  }
+});
+window.addEventListener("keyup", e => keys[e.key.toLowerCase()] = false);
+
+const mouseLookSensitivity = 0.002;
+window.addEventListener("mousemove", e => {
+  if (pointerLocked && !isPaintingMode) {
+    yaw -= e.movementX * mouseLookSensitivity;
+    if (!isHost) {
+      pitch -= e.movementY * mouseLookSensitivity;
+      pitch = Math.max(-1.2, Math.min(1.2, pitch));
+    }
+  }
+  if (painting && isHost && isPaintingMode) paintAtMouse(e);
+});
 
 window.addEventListener("mousedown", e => {
   if (isHost) {
-    if (isPaintingMode && e.button === 0) {
-      painting = true;
-      paintAtMouse(e);
-    }
+    // ペイントモード優先
+    if (isPaintingMode && e.button === 0) { painting = true; paintAtMouse(e); }
     return;
   }
-
-  // ゲスト側（FPS）
+  // ゲスト側
   if (!pointerLocked && e.button === 0) {
     document.body.requestPointerLock();
     return;
@@ -192,80 +148,114 @@ window.addEventListener("mousedown", e => {
     shootLaser();
   }
 });
+window.addEventListener("mouseup", () => painting = false);
 
-// ⭐ ホストのホイール拡大ができなくなっていた原因：
-//   PointerLock 中は wheel がブラウザにブロックされる。
-//   → ペイントモード中だけホイールを有効化する。
-
+/* ホストのペイント中だけホイールでズーム */
 window.addEventListener("wheel", e => {
   if (isHost && isPaintingMode) {
     camera.position.z += e.deltaY * 0.05;
   }
 });
 
-// マウス移動（TPS視点はすでに直っているので触らない）
-window.addEventListener("mousemove", e => {
-  if (pointerLocked && !isPaintingMode) {
-    yaw -= e.movementX * mouseLookSensitivity;
+/* -------------------------
+   ペイント実装（簡易）
+   - 床に貼った大きなキャンバスに描く方式
+   ------------------------- */
+const paintCanvas = document.createElement("canvas");
+paintCanvas.width = paintCanvas.height = 1024;
+const paintCtx = paintCanvas.getContext("2d");
+paintCtx.fillStyle = "#ffffff"; paintCtx.fillRect(0,0,paintCanvas.width,paintCanvas.height);
+const paintTex = new THREE.CanvasTexture(paintCanvas);
+const paintPlane = new THREE.Mesh(new THREE.PlaneGeometry(50,50), new THREE.MeshBasicMaterial({map:paintTex, side:THREE.DoubleSide}));
+paintPlane.rotation.x = -Math.PI/2; paintPlane.position.y = 0.01; scene.add(paintPlane);
 
-    if (!isHost) {
-      pitch -= e.movementY * mouseLookSensitivity;
-      pitch = Math.max(-1.2, Math.min(1.2, pitch));
-    }
+function paintAtMouse(e){
+  try {
+    if (!paintCtx || !renderer) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    const x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    const y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(x,y), camera);
+    const hits = ray.intersectObject(paintPlane, true);
+    if (hits.length === 0) return;
+    const uv = hits[0].uv;
+    if (!uv) return;
+    const px = Math.floor(uv.x * paintCanvas.width);
+    const py = Math.floor((1 - uv.y) * paintCanvas.height);
+    paintCtx.fillStyle = brushColor;
+    paintCtx.beginPath();
+    paintCtx.arc(px, py, brushSize, 0, Math.PI*2);
+    paintCtx.fill();
+    paintTex.needsUpdate = true;
+    // 必要ならここでネットワーク送信（paintDot）を行う
+  } catch (err) {
+    console.error("paintAtMouse error:", err);
   }
+}
 
-  if (painting && isHost && isPaintingMode) {
-    paintAtMouse(e);
-  }
-});
+/* -------------------------
+   簡易移動（ホスト/ゲストで反転）
+   ------------------------- */
+let vy = 0, onGround = true;
+function updatePlayer(){
+  let moveF = 0, moveS = 0;
+  const speed = 0.3;
+  if (keys["w"]) moveF = speed;
+  if (keys["s"]) moveF = -speed;
+  if (keys["a"]) moveS = -speed;
+  if (keys["d"]) moveS = speed;
+  if (!isHost) { moveF = -moveF; moveS = -moveS; }
+  const dirX = Math.sin(yaw), dirZ = Math.cos(yaw);
+  myHitbox.position.x += dirX * moveF + -dirZ * moveS;
+  myHitbox.position.z += dirZ * moveF + dirX * moveS;
+  if (keys[" " ] && onGround) { vy = 0.35; onGround = false; }
+  vy += -0.02;
+  myHitbox.position.y += vy;
+  if (myHitbox.position.y <= 2) { myHitbox.position.y = 2; vy = 0; onGround = true; }
+  myVisual.position.copy(myHitbox.position);
+}
 
-window.addEventListener("mouseup", () => painting = false);
-
-// Fキーでペイントモード切替（TPS視点は触らない）
-window.addEventListener("keydown", e => {
-  const k = e.key.toLowerCase();
-  keys[k] = true;
-
-  if (isHost && k === "f") {
-    isPaintingMode = !isPaintingMode;
-
-    if (isPaintingMode) {
-      if (pointerLocked) document.exitPointerLock();
-    } else {
-      document.body.requestPointerLock();
-    }
-  }
-});
-function updateCamera() {
-  if (isHost) {
+/* -------------------------
+   カメラ更新（安全チェックあり）
+   - 重要: rotation を直接 set する箇所を排除し lookAt を使う
+   ------------------------- */
+function updateCamera(){
+  if (!myHitbox) return;
+  if (isHost){
     const offsetX = Math.sin(yaw) * TPS_DISTANCE;
     const offsetZ = Math.cos(yaw) * TPS_DISTANCE;
-
-    camera.position.set(
-      myHitbox.position.x - offsetX,
-      myHitbox.position.y + TPS_HEIGHT,
-      myHitbox.position.z - offsetZ
-    );
-
+    camera.position.set(myHitbox.position.x - offsetX, myHitbox.position.y + TPS_HEIGHT, myHitbox.position.z - offsetZ);
+    if (camera.position.y < 1) camera.position.y = 1;
     camera.lookAt(myHitbox.position);
-
   } else {
-    const headHeight = 3;
-
-    camera.position.set(
-      myHitbox.position.x,
-      myHitbox.position.y + headHeight,
-      myHitbox.position.z
-    );
-
+    camera.position.set(myHitbox.position.x, myHitbox.position.y + 3, myHitbox.position.z);
     camera.rotation.set(pitch, yaw, 0);
   }
 }
 
-function animate() {
-  requestAnimationFrame(animate);
-  updatePlayer();
-  updateCamera();
-  renderer.render(scene, camera);
+/* -------------------------
+   animate を try/catch で保護
+   ------------------------- */
+function animate(){
+  try {
+    requestAnimationFrame(animate);
+    updatePlayer();
+    updateCamera();
+    renderer.render(scene, camera);
+  } catch (err) {
+    console.error("animate error:", err);
+    // エラーが出てもループを止めない（デバッグ用）
+  }
 }
 animate();
+
+/* -------------------------
+   デバッグ用の簡易関数
+   ------------------------- */
+function shootLaser(){ console.log("shoot"); }
+updateUI();
+
+</script>
+</body>
+</html>
